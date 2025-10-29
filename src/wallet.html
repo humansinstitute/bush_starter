@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>8Bit Cashu Wallet</title>
+    <link rel="stylesheet" href="./ui/pixel-skin.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="scanlines"></div>
+    <main class="wallet-shell">
+      <header class="wallet-header">
+        <h1>Cashubash Arcade</h1>
+        <p class="tagline">Insert sats to continue</p>
+        <div class="balance-panel">
+          <span class="panel-label">Balance</span>
+          <span id="balance-display" class="balance-value">-- sats</span>
+        </div>
+        <p class="status-line" id="status-line">Loading balance…</p>
+      </header>
+
+      <section class="wallet-grid">
+        <article class="card neon-edge" data-card="make-invoice">
+          <h2>Create Token</h2>
+          <p>Generate a fresh invoice to stack sats.</p>
+          <form id="make-invoice-form" class="pixel-form" autocomplete="off">
+            <label class="pixel-field" data-required>
+              <span>Amount (sats)</span>
+              <input
+                type="number"
+                name="amount"
+                min="1"
+                step="1"
+                placeholder="1000"
+                required
+              />
+            </label>
+            <button type="button" class="more-toggle" data-target="make-invoice-more">
+              More options
+            </button>
+            <div class="more-fields" id="make-invoice-more" hidden>
+              <label class="pixel-field">
+                <span>Description</span>
+                <input
+                  type="text"
+                  name="description"
+                  maxlength="128"
+                  placeholder="High score bounty"
+                />
+              </label>
+              <label class="pixel-field">
+                <span>Expiry (seconds)</span>
+                <input
+                  type="number"
+                  name="expiry"
+                  min="60"
+                  step="60"
+                  placeholder="600"
+                />
+              </label>
+            </div>
+            <button type="submit" class="pixel-button">Spawn Invoice</button>
+          </form>
+          <div id="invoice-output" class="invoice-output" hidden>
+            <canvas id="invoice-qr" class="invoice-qr" aria-hidden="true"></canvas>
+            <p>
+              <span class="panel-label">Invoice</span>
+              <code id="invoice-string" class="invoice-string"></code>
+            </p>
+            <button type="button" id="copy-invoice" class="pixel-button">
+              Copy to clipboard
+            </button>
+          </div>
+        </article>
+
+        <article class="card neon-edge" data-card="pay-invoice">
+          <h2>Pay Invoice</h2>
+          <p>Feed coins into a lightning cabinet.</p>
+          <form id="pay-invoice-form" class="pixel-form" autocomplete="off">
+            <label class="pixel-field" data-required>
+              <span>Invoice</span>
+              <textarea
+                name="invoice"
+                rows="3"
+                placeholder="bolt11..."
+                required
+              ></textarea>
+            </label>
+            <button type="button" class="more-toggle" data-target="pay-invoice-more">
+              More options
+            </button>
+            <div class="more-fields" id="pay-invoice-more" hidden>
+              <label class="pixel-field">
+                <span>Amount Override (sats)</span>
+                <input
+                  type="number"
+                  name="amount"
+                  min="1"
+                  step="1"
+                  placeholder="Optional"
+                />
+              </label>
+            </div>
+            <button type="submit" class="pixel-button">Fire Lightning</button>
+          </form>
+          <output id="pay-invoice-output" class="action-output" role="status"></output>
+        </article>
+
+        <article class="card neon-edge" data-card="send-ecash">
+          <h2>Beam eCash</h2>
+          <p>Dispense tokens for your co-op crew.</p>
+          <form id="send-ecash-form" class="pixel-form" autocomplete="off">
+            <label class="pixel-field" data-required>
+              <span>Amount (sats)</span>
+              <input
+                type="number"
+                name="amount"
+                min="1"
+                step="1"
+                placeholder="500"
+                required
+              />
+            </label>
+            <button type="submit" class="pixel-button">Mint Token</button>
+          </form>
+          <output id="send-ecash-output" class="action-output" role="status"></output>
+        </article>
+      </section>
+    </main>
+
+    <template id="toast-template">
+      <div class="toast"></div>
+    </template>
+
+    <script type="module" src="./wallet-frontend.ts"></script>
+  </body>
+</html>

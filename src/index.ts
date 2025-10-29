@@ -1,8 +1,26 @@
 import { once } from "node:events";
 import net from "node:net";
+import walletHtml from "./wallet.html";
+import { cashubash } from "./ctxcn/CashubashClient.ts";
+
 type LogLevel = "info" | "error";
 
 type LogFields = Record<string, unknown> | undefined;
+
+interface MakeInvoiceBody {
+  amount?: number;
+  description?: string;
+  expiry?: number;
+}
+
+interface PayInvoiceBody {
+  invoice: string;
+  amount?: number;
+}
+
+interface SendEcashBody {
+  amount?: number;
+}
 
 function createLogger({ name }: { name: string }) {
   const prefix = `[${name}]`;
@@ -26,7 +44,7 @@ function createLogger({ name }: { name: string }) {
   };
 }
 
-const logger = createLogger({ name: "custom-starter-web" });
+const logger = createLogger({ name: "cashubash-8bit" });
 
 async function findAvailablePort(startPort: number): Promise<number> {
   let port = Math.max(0, startPort);
@@ -57,92 +75,137 @@ function isPortAvailable(port: number): Promise<boolean> {
   });
 }
 
-function renderHtml(): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Custom Starter Wallet</title>
-  <style>
-    :root {
-      color-scheme: light dark;
-      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-    * {
-      box-sizing: border-box;
-    }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      background: linear-gradient(140deg, #050505, #1f1f1f);
-      color: #f5f5f5;
-      padding: 2rem;
-    }
-    main {
-      max-width: 48rem;
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      gap: 1.5rem;
-    }
-    blockquote {
-      margin: 0;
-      font-size: clamp(1.5rem, 4vw, 2.5rem);
-      font-style: italic;
-      line-height: 1.5;
-    }
-    cite {
-      display: block;
-      margin-top: 1rem;
-      font-size: 1rem;
-      opacity: 0.7;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-    p {
-      margin: 0;
-      font-size: 1.1rem;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-    }
-  </style>
-</head>
-<body>
-  <main>
-    <blockquote>"We could have been anything that we wanted to be"</blockquote>
-    <cite>— Bugsy Malone, on Cashu Wallets.</cite>
-    <p>Vibe Hard</p>
-  </main>
-</body>
-</html>`;
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+}
+
+function badRequest(message: string): Response {
+  logger.error({ message }, "bad request");
+  return jsonResponse({ message }, 400);
 }
 
 async function start() {
   const port = await findAvailablePort(4000);
   const server = Bun.serve({
     port,
-    fetch: () =>
-      new Response(renderHtml(), {
-        headers: {
-          "Content-Type": "text/html; charset=utf-8",
+    routes: {
+      "/": walletHtml,
+      "/api/balance": {
+        GET: async () => {
+          try {
+            const { result } = await cashubash.GetBalance({});
+            return jsonResponse({ balance: result.balance });
+          } catch (error) {
+            logger.error({ error }, "failed to fetch balance");
+            return jsonResponse({ message: "Failed to fetch balance" }, 502);
+          }
         },
-      }),
+      },
+      "/api/make-invoice": {
+        POST: async (request: Request) => {
+          let payload: MakeInvoiceBody;
+          try {
+            payload = (await request.json()) as MakeInvoiceBody;
+          } catch {
+            return badRequest("Invalid JSON body");
+          }
+          if (typeof payload.amount !== "number" || !Number.isFinite(payload.amount) || payload.amount <= 0) {
+            return badRequest("Amount must be a positive number");
+          }
+          try {
+            const { result } = await cashubash.MakeInvoice(
+              payload.amount,
+              payload.description,
+              undefined,
+              payload.expiry
+            );
+            return jsonResponse({
+              invoice: result.invoice,
+              amount: result.amount,
+              expiresAt: result.expires_at,
+            });
+          } catch (error) {
+            logger.error({ error }, "failed to make invoice");
+            return jsonResponse({ message: "Failed to make invoice" }, 502);
+          }
+        },
+      },
+      "/api/pay-invoice": {
+        POST: async (request: Request) => {
+          let payload: PayInvoiceBody;
+          try {
+            payload = (await request.json()) as PayInvoiceBody;
+          } catch {
+            return badRequest("Invalid JSON body");
+          }
+          if (!payload.invoice) {
+            return badRequest("Invoice is required");
+          }
+          const amount = payload.amount;
+          if (typeof amount === "number" && (!Number.isFinite(amount) || amount <= 0)) {
+            return badRequest("Amount override must be positive");
+          }
+          try {
+            const { result } = await cashubash.PayInvoice(payload.invoice, amount);
+            return jsonResponse({
+              preimage: result.preimage,
+              feesPaid: result.fees_paid,
+            });
+          } catch (error) {
+            logger.error({ error }, "failed to pay invoice");
+            return jsonResponse({ message: "Failed to pay invoice" }, 502);
+          }
+        },
+      },
+      "/api/send-ecash": {
+        POST: async (request: Request) => {
+          let payload: SendEcashBody;
+          try {
+            payload = (await request.json()) as SendEcashBody;
+          } catch {
+            return badRequest("Invalid JSON body");
+          }
+          if (typeof payload.amount !== "number" || !Number.isFinite(payload.amount) || payload.amount <= 0) {
+            return badRequest("Amount must be a positive number");
+          }
+          try {
+            const result = await cashubash.SendEcash(payload.amount);
+            return jsonResponse({
+              cashuToken: result.cashuToken,
+              sentAmount: result.sentAmount,
+              keepAmount: result.keepAmount,
+              proofCount: result.proofCount,
+              timestamp: result.timestamp,
+            });
+          } catch (error) {
+            logger.error({ error }, "failed to send ecash");
+            return jsonResponse({ message: "Failed to mint ecash" }, 502);
+          }
+        },
+      },
+    },
     error(err) {
       logger.error({ err }, "server error");
       return new Response("Internal Server Error", { status: 500 });
     },
+    development: {
+      hmr: true,
+      console: true,
+    },
     reusePort: false,
   });
 
-  logger.info({ port: server.port }, `Custom Starter Wallet ready on port ${server.port}`);
+  logger.info({ port: server.port }, `8Bit Cashubash wallet ready on port ${server.port}`);
 
   await once(process, "SIGTERM");
-  logger.info("Received SIGTERM, shutting down.");
+  logger.info(undefined, "Received SIGTERM, shutting down.");
   server.stop();
-  logger.info("Server closed.");
+  logger.info(undefined, "Server closed.");
   process.exit(0);
 }
 
