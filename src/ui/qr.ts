@@ -30,6 +30,9 @@ export async function renderInvoiceToCanvas(
     },
   };
   await QRCode.toCanvas(canvas, invoice, merged);
+  canvas.style.width = "100%";
+  canvas.style.maxWidth = "11rem";
+  canvas.style.height = "auto";
 }
 
 export async function createInvoiceDataUrl(

@@ -255,6 +255,8 @@ body {
   display: grid;
   gap: 0.75rem;
   justify-items: center;
+  width: 100%;
+  box-sizing: border-box;
   background: rgba(4, 0, 16, 0.6);
   border: 1px dashed rgba(255, 230, 109, 0.35);
   padding: 1rem;
@@ -262,7 +264,9 @@ body {
 }
 
 .invoice-qr {
-  width: min(10rem, 100%);
+  display: block;
+  width: 100%;
+  max-width: 11rem;
   height: auto;
   margin: 0 auto;
   image-rendering: pixelated;
@@ -276,6 +280,7 @@ body {
   border-radius: 10px;
   background: rgba(0, 0, 0, 0.65);
   word-break: break-all;
+  overflow-wrap: anywhere;
   color: var(--crt-green);
   font-size: 0.55rem;
 }
