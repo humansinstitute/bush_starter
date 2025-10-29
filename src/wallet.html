@@ -95,6 +95,9 @@
                 required
               ></textarea>
             </label>
+            <button type="button" id="scan-invoice" class="pixel-button pixel-button-ghost">
+              Scan invoice
+            </button>
             <button type="button" class="more-toggle" data-target="pay-invoice-more">
               More options
             </button>
@@ -112,6 +115,15 @@
             </div>
             <button type="submit" class="pixel-button">Fire Lightning</button>
           </form>
+          <section id="invoice-scanner-panel" class="scanner-panel" hidden>
+            <h3>Scan for invoice</h3>
+            <div id="invoice-scanner-view" class="scanner-view" role="img" aria-label="Live camera preview"></div>
+            <div class="scanner-actions">
+              <button type="button" id="scanner-cancel" class="pixel-button pixel-button-ghost">
+                Cancel
+              </button>
+            </div>
+          </section>
           <output id="pay-invoice-output" class="action-output" role="status"></output>
         </article>
 

@@ -1,3 +1,4 @@
+import { cancelInvoiceScan, scanInvoiceOnce } from "./ui/qr-scanner.ts";
 import { renderInvoiceToCanvas } from "./ui/qr.ts";
 
 interface ApiError {
@@ -36,6 +37,9 @@ const copyInvoiceButton = document.querySelector<HTMLButtonElement>("#copy-invoi
 const payInvoiceOutput = document.querySelector<HTMLOutputElement>("#pay-invoice-output");
 const sendEcashOutput = document.querySelector<HTMLOutputElement>("#send-ecash-output");
 const toastTemplate = document.querySelector<HTMLTemplateElement>("#toast-template");
+const scanInvoiceButton = document.querySelector<HTMLButtonElement>("#scan-invoice");
+const invoiceScannerPanel = document.querySelector<HTMLElement>("#invoice-scanner-panel");
+const scannerCancelButton = document.querySelector<HTMLButtonElement>("#scanner-cancel");
 
 async function api<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
@@ -217,6 +221,68 @@ function listenForInvoicePayment(): void {
   });
 }
 
+function setupInvoiceScanner(): void {
+  if (!scanInvoiceButton || !invoiceScannerPanel || !payInvoiceForm) {
+    return;
+  }
+
+  const invoiceField = payInvoiceForm.querySelector<HTMLTextAreaElement>("textarea[name=\"invoice\"]");
+  if (!invoiceField) {
+    return;
+  }
+
+  const disableScanner = (): void => {
+    scanInvoiceButton.disabled = false;
+    invoiceScannerPanel.setAttribute("hidden", "");
+  };
+
+  const handleCancel = async (): Promise<void> => {
+    await cancelInvoiceScan();
+    disableScanner();
+    showStatus("Scanner closed");
+    showToast("Scan cancelled");
+  };
+
+  if (scannerCancelButton) {
+    scannerCancelButton.addEventListener("click", () => {
+      void handleCancel();
+    });
+  }
+
+  scanInvoiceButton.addEventListener("click", async () => {
+    if (scanInvoiceButton.disabled) {
+      return;
+    }
+
+    scanInvoiceButton.disabled = true;
+    invoiceScannerPanel.removeAttribute("hidden");
+    showStatus("Opening camera…");
+
+    try {
+      const decoded = await scanInvoiceOnce("invoice-scanner-view");
+      invoiceField.value = decoded.trim();
+      invoiceField.dispatchEvent(new Event("input", { bubbles: true }));
+      showToast("Invoice captured");
+      showStatus("Invoice scanned");
+      invoiceField.focus();
+      if (typeof payInvoiceForm.requestSubmit === "function") {
+        payInvoiceForm.requestSubmit();
+      } else {
+        payInvoiceForm.submit();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Scanner error";
+      if (message !== "Scan cancelled" && !message.includes("Interrupt previous scan")) {
+        showToast(message);
+        showStatus("Scan failed", true);
+      }
+    } finally {
+      await cancelInvoiceScan();
+      disableScanner();
+    }
+  });
+}
+
 function listenForSendEcash(): void {
   if (!sendEcashForm || !sendEcashOutput) {
     return;
@@ -271,6 +337,7 @@ function init(): void {
   handleMoreToggles();
   listenForInvoiceGeneration();
   listenForInvoicePayment();
+  setupInvoiceScanner();
   listenForSendEcash();
   setupCopyInvoice();
   updateBalance();
