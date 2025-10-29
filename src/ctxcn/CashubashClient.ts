@@ -137,6 +137,8 @@ export class CashubashClient implements Cashubash {
       ...rest
     } = options;
 
+    console.info("[CashubashClient] Using relays:", relays);
+
     this.transport = new NostrClientTransport({
       serverPubkey,
       signer,
