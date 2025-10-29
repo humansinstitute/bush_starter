@@ -112,11 +112,28 @@ export type Cashubash = {
 };
 
 export class CashubashClient implements Cashubash {
+  static readonly DEFAULT_MINT_URL = "https://mint.minibits.cash/Bitcoin";
+  private static normalizeMintUrl(mintUrl?: string): string {
+    const trimmed = mintUrl?.trim();
+    if (!trimmed) {
+      return CashubashClient.DEFAULT_MINT_URL;
+    }
+
+    try {
+      // Validate URL format, will throw if invalid
+      void new URL(trimmed);
+      return trimmed;
+    } catch {
+      console.warn(
+        `[CashubashClient] Provided MINT_URL is invalid ("${trimmed}"), falling back to default mint`
+      );
+      return CashubashClient.DEFAULT_MINT_URL;
+    }
+  }
+
   static readonly SERVER_PUBKEY: string =
     process.env.SERVER_PUBKEY;
-  static readonly DEFAULT_MINT_URL = "https://mint.minibits.cash/Bitcoin";
-  static readonly MINT_URL =
-    process.env.MINT_URL ?? CashubashClient.DEFAULT_MINT_URL;
+  static readonly MINT_URL = CashubashClient.normalizeMintUrl(process.env.MINT_URL);
   private client: Client;
   private transport: Transport;
 
@@ -213,10 +230,11 @@ export class CashubashClient implements Cashubash {
   async SendEcash(
     amount: number
   ): Promise<SendEcashOutput> {
-    return this.call("send_ecash", {
-      amount,
-      mint_url: CashubashClient.MINT_URL,
-    });
+    const payload: Record<string, unknown> = { amount };
+    if (CashubashClient.MINT_URL) {
+      payload.mint_url = CashubashClient.MINT_URL;
+    }
+    return this.call("send_ecash", payload);
   }
 
     /**
