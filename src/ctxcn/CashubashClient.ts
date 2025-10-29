@@ -138,6 +138,7 @@ export class CashubashClient implements Cashubash {
     } = options;
 
     console.info("[CashubashClient] Using relays:", relays);
+    console.info("[CashubashClient] Target server pubkey:", serverPubkey ?? "(not provided)");
 
     this.transport = new NostrClientTransport({
       serverPubkey,
