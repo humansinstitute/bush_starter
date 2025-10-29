@@ -36,6 +36,9 @@ const invoiceQrCanvas = document.querySelector<HTMLCanvasElement>("#invoice-qr")
 const copyInvoiceButton = document.querySelector<HTMLButtonElement>("#copy-invoice");
 const payInvoiceOutput = document.querySelector<HTMLOutputElement>("#pay-invoice-output");
 const sendEcashOutput = document.querySelector<HTMLOutputElement>("#send-ecash-output");
+const sendEcashTokenPanel = document.querySelector<HTMLElement>("#send-ecash-token-panel");
+const sendEcashTokenField = document.querySelector<HTMLTextAreaElement>("#send-ecash-token");
+const copyEcashTokenButton = document.querySelector<HTMLButtonElement>("#copy-ecash-token");
 const toastTemplate = document.querySelector<HTMLTemplateElement>("#toast-template");
 const scanInvoiceButton = document.querySelector<HTMLButtonElement>("#scan-invoice");
 const invoiceScannerPanel = document.querySelector<HTMLElement>("#invoice-scanner-panel");
@@ -295,14 +298,32 @@ function listenForSendEcash(): void {
       showToast("Amount must be greater than zero");
       return;
     }
+    if (sendEcashTokenPanel) {
+      sendEcashTokenPanel.setAttribute("hidden", "");
+    }
+    if (sendEcashTokenField) {
+      sendEcashTokenField.value = "";
+    }
+    if (copyEcashTokenButton) {
+      copyEcashTokenButton.disabled = true;
+    }
     sendEcashOutput.value = "Minting token…";
     try {
       const result = await api<SendEcashResponse>("/api/send-ecash", {
         method: "POST",
         body: JSON.stringify({ amount }),
       });
-      sendEcashOutput.value = `Token minted (${result.sentAmount} sats).`;
+      sendEcashOutput.value = `Token minted (${result.sentAmount.toLocaleString()} sats).`;
       sendEcashOutput.style.color = "var(--crt-green)";
+      if (sendEcashTokenPanel && sendEcashTokenField) {
+        sendEcashTokenField.value = result.cashuToken;
+        sendEcashTokenPanel.removeAttribute("hidden");
+        sendEcashTokenField.focus();
+        sendEcashTokenField.select();
+      }
+      if (copyEcashTokenButton) {
+        copyEcashTokenButton.disabled = false;
+      }
       showToast("Token ready");
       await updateBalance();
     } catch (error) {
@@ -333,6 +354,28 @@ function setupCopyInvoice(): void {
   });
 }
 
+function setupCopyEcashToken(): void {
+  if (!copyEcashTokenButton || !sendEcashTokenField) {
+    return;
+  }
+
+  copyEcashTokenButton.disabled = true;
+
+  copyEcashTokenButton.addEventListener("click", async () => {
+    const token = sendEcashTokenField.value.trim();
+    if (!token) {
+      showToast("Token not ready");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(token);
+      showToast("Token copied");
+    } catch {
+      showToast("Clipboard not available");
+    }
+  });
+}
+
 function init(): void {
   handleMoreToggles();
   listenForInvoiceGeneration();
@@ -340,6 +383,7 @@ function init(): void {
   setupInvoiceScanner();
   listenForSendEcash();
   setupCopyInvoice();
+  setupCopyEcashToken();
   updateBalance();
   setInterval(updateBalance, 3000);
 }

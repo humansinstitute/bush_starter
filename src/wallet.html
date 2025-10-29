@@ -144,6 +144,21 @@
             </label>
             <button type="submit" class="pixel-button">Mint Token</button>
           </form>
+          <section id="send-ecash-token-panel" class="token-panel" hidden>
+            <label class="pixel-field">
+              <span>Minted token</span>
+              <textarea
+                id="send-ecash-token"
+                readonly
+                rows="4"
+              ></textarea>
+            </label>
+            <div class="token-actions">
+              <button type="button" id="copy-ecash-token" class="pixel-button pixel-button-ghost">
+                Copy token
+              </button>
+            </div>
+          </section>
           <output id="send-ecash-output" class="action-output" role="status"></output>
         </article>
       </section>
