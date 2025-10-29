@@ -130,7 +130,7 @@ export class CashubashClient implements Cashubash {
 
     const {
       privateKey,
-      relays = ["ws://localhost:10547"],
+      relays = ["wss://relay.contextvm.org"],
       signer = new PrivateKeySigner(privateKey || ""),
       relayHandler = new ApplesauceRelayPool(relays),
  			serverPubkey = CashubashClient.SERVER_PUBKEY,
