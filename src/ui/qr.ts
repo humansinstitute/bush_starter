@@ -9,7 +9,7 @@ export interface QROptions {
 }
 
 const defaultOptions: QROptions = {
-  scale: 6,
+  scale: 4,
   color: {
     dark: "#36c2ff",
     light: "#080016",

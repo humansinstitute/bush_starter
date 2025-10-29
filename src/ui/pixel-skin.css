@@ -217,6 +217,10 @@ body {
   animation: flipDown 160ms ease;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 @keyframes flipDown {
   from {
     opacity: 0;
@@ -250,6 +254,7 @@ body {
 .invoice-output {
   display: grid;
   gap: 0.75rem;
+  justify-items: center;
   background: rgba(4, 0, 16, 0.6);
   border: 1px dashed rgba(255, 230, 109, 0.35);
   padding: 1rem;
@@ -257,7 +262,7 @@ body {
 }
 
 .invoice-qr {
-  width: min(12rem, 100%);
+  width: min(10rem, 100%);
   height: auto;
   margin: 0 auto;
   image-rendering: pixelated;
@@ -265,6 +270,7 @@ body {
 
 .invoice-string {
   display: block;
+  width: 100%;
   margin-top: 0.5rem;
   padding: 0.75rem;
   border-radius: 10px;

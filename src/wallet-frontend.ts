@@ -99,22 +99,29 @@ async function updateBalance(): Promise<void> {
 
 function handleMoreToggles(): void {
   document.querySelectorAll<HTMLButtonElement>(".more-toggle").forEach((button) => {
+    const targetId = button.dataset.target;
+    if (!targetId) {
+      return;
+    }
+    const target = document.getElementById(targetId);
+    if (!target) {
+      return;
+    }
+
+    target.setAttribute("hidden", "");
+    button.textContent = "More options";
+    button.setAttribute("aria-expanded", "false");
+
     button.addEventListener("click", () => {
-      const targetId = button.dataset.target;
-      if (!targetId) {
-        return;
-      }
-      const target = document.getElementById(targetId);
-      if (!target) {
-        return;
-      }
       const isHidden = target.hasAttribute("hidden");
       if (isHidden) {
         target.removeAttribute("hidden");
         button.textContent = "Hide options";
+        button.setAttribute("aria-expanded", "true");
       } else {
         target.setAttribute("hidden", "");
         button.textContent = "More options";
+        button.setAttribute("aria-expanded", "false");
       }
     });
   });
