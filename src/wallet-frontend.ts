@@ -68,6 +68,7 @@ async function api<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
     headers: {
       "Content-Type": "application/json",
     },
+    credentials: "same-origin",
     ...init,
   });
 
@@ -126,6 +127,25 @@ function setPubkeyFormDisabled(disabled: boolean): void {
   }
 }
 
+function isPubkeyMissingError(error: unknown): error is Error {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return error.message.toLowerCase().includes("server pubkey not configured");
+}
+
+function handleMissingPubkey(error: unknown): boolean {
+  if (!isPubkeyMissingError(error)) {
+    return false;
+  }
+  showPubkeyGate();
+  setPubkeyError("Server pubkey required to continue");
+  if (pubkeyHint) {
+    pubkeyHint.textContent = "Paste your server pubkey to resume.";
+  }
+  return true;
+}
+
 function showPubkeyGate(): void {
   stopBalancePolling();
   if (pubkeyOverlay) {
@@ -178,6 +198,9 @@ async function bootstrapPubkeyStatus(): Promise<void> {
   }
   try {
     const status = await api<ServerPubkeyStatus>("/api/server-pubkey");
+    if (pubkeyInput) {
+      pubkeyInput.value = status.serverPubkey ?? "";
+    }
     if (status.hasServerPubkey) {
       hidePubkeyGate();
       showStatus("Syncing wallet…");
@@ -261,6 +284,9 @@ async function updateBalance(): Promise<void> {
     showStatus("Balance synced");
   } catch (error) {
     console.error(error);
+    if (handleMissingPubkey(error)) {
+      return;
+    }
     showStatus("Failed to fetch balance", true);
   }
 }
@@ -339,6 +365,10 @@ function listenForInvoiceGeneration(): void {
       await updateBalance();
     } catch (error) {
       console.error(error);
+      if (handleMissingPubkey(error)) {
+        showToast("Server pubkey required");
+        return;
+      }
       showStatus("Failed to create invoice", true);
       showToast("Invoice failed");
     }
@@ -378,6 +408,12 @@ function listenForInvoicePayment(): void {
       await updateBalance();
     } catch (error) {
       console.error(error);
+      if (handleMissingPubkey(error)) {
+        payInvoiceOutput.value = "";
+        payInvoiceOutput.style.color = "var(--danger)";
+        showToast("Server pubkey required");
+        return;
+      }
       payInvoiceOutput.value = "Payment failed";
       payInvoiceOutput.style.color = "var(--danger)";
       showToast("Payment failed");
@@ -489,6 +525,11 @@ function listenForSendEcash(): void {
       await updateBalance();
     } catch (error) {
       console.error(error);
+      if (handleMissingPubkey(error)) {
+        sendEcashOutput.value = "";
+        showToast("Server pubkey required");
+        return;
+      }
       sendEcashOutput.value = "Failed to mint token";
       sendEcashOutput.style.color = "var(--danger)";
       showToast("Token mint failed");
