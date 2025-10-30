@@ -25,6 +25,16 @@ interface SendEcashResponse {
   sentAmount: number;
 }
 
+interface ServerPubkeyStatus {
+  hasServerPubkey: boolean;
+  serverPubkey?: string;
+}
+
+interface ConfigurePubkeyResponse {
+  configured: boolean;
+  serverPubkey?: string;
+}
+
 const statusLine = document.querySelector<HTMLParagraphElement>("#status-line");
 const balanceDisplay = document.querySelector<HTMLSpanElement>("#balance-display");
 const makeInvoiceForm = document.querySelector<HTMLFormElement>("#make-invoice-form");
@@ -43,6 +53,15 @@ const toastTemplate = document.querySelector<HTMLTemplateElement>("#toast-templa
 const scanInvoiceButton = document.querySelector<HTMLButtonElement>("#scan-invoice");
 const invoiceScannerPanel = document.querySelector<HTMLElement>("#invoice-scanner-panel");
 const scannerCancelButton = document.querySelector<HTMLButtonElement>("#scanner-cancel");
+const pubkeyOverlay = document.querySelector<HTMLDivElement>("#pubkey-gate");
+const pubkeyForm = document.querySelector<HTMLFormElement>("#pubkey-form");
+const pubkeyInput = document.querySelector<HTMLInputElement>("#pubkey-input");
+const pubkeySubmit = document.querySelector<HTMLButtonElement>("#pubkey-submit");
+const pubkeyHint = document.querySelector<HTMLParagraphElement>("#pubkey-hint");
+const pubkeyError = document.querySelector<HTMLOutputElement>("#pubkey-error");
+
+let balanceIntervalId: number | null = null;
+let balanceSyncEnabled = false;
 
 async function api<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
@@ -91,7 +110,149 @@ function showToast(message: string): void {
   }, 1800);
 }
 
+function setPubkeyError(message: string | null): void {
+  if (!pubkeyError) {
+    return;
+  }
+  pubkeyError.textContent = message ?? "";
+}
+
+function setPubkeyFormDisabled(disabled: boolean): void {
+  if (pubkeyInput) {
+    pubkeyInput.disabled = disabled;
+  }
+  if (pubkeySubmit) {
+    pubkeySubmit.disabled = disabled;
+  }
+}
+
+function showPubkeyGate(): void {
+  stopBalancePolling();
+  if (pubkeyOverlay) {
+    pubkeyOverlay.removeAttribute("hidden");
+  }
+  setPubkeyFormDisabled(false);
+  setPubkeyError(null);
+  if (pubkeyHint) {
+    pubkeyHint.textContent = "Feed the cabinet a server pubkey to respawn.";
+  }
+  if (pubkeyInput) {
+    pubkeyInput.focus();
+    if (pubkeyInput.value) {
+      pubkeyInput.select();
+    }
+  }
+}
+
+function hidePubkeyGate(): void {
+  if (pubkeyOverlay) {
+    pubkeyOverlay.setAttribute("hidden", "");
+  }
+  setPubkeyError(null);
+}
+
+function startBalancePolling(): void {
+  if (balanceIntervalId !== null) {
+    balanceSyncEnabled = true;
+    return;
+  }
+  balanceSyncEnabled = true;
+  void updateBalance();
+  balanceIntervalId = window.setInterval(() => {
+    void updateBalance();
+  }, 3000);
+}
+
+function stopBalancePolling(): void {
+  if (balanceIntervalId !== null) {
+    window.clearInterval(balanceIntervalId);
+    balanceIntervalId = null;
+  }
+  balanceSyncEnabled = false;
+}
+
+async function bootstrapPubkeyStatus(): Promise<void> {
+  if (!pubkeyOverlay) {
+    startBalancePolling();
+    return;
+  }
+  try {
+    const status = await api<ServerPubkeyStatus>("/api/server-pubkey");
+    if (status.hasServerPubkey) {
+      hidePubkeyGate();
+      showStatus("Syncing wallet…");
+      startBalancePolling();
+      return;
+    }
+    showPubkeyGate();
+    showStatus("Awaiting server pubkey…");
+  } catch (error) {
+    console.error(error);
+    showPubkeyGate();
+    setPubkeyError("Failed to inspect arcade cabinet");
+    showStatus("Failed to load wallet config", true);
+  }
+}
+
+function setupPubkeyFlow(): void {
+  if (!pubkeyForm || !pubkeyInput || !pubkeySubmit) {
+    startBalancePolling();
+    return;
+  }
+
+  pubkeyForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const candidate = pubkeyInput.value.trim();
+    if (!candidate) {
+      setPubkeyError("Server pubkey is required");
+      pubkeyInput.focus();
+      return;
+    }
+    setPubkeyError(null);
+    setPubkeyFormDisabled(true);
+    if (pubkeyHint) {
+      pubkeyHint.textContent = "Linking relays…";
+    }
+    pubkeySubmit.textContent = "Connecting…";
+
+    try {
+      const result = await api<ConfigurePubkeyResponse>("/api/server-pubkey", {
+        method: "POST",
+        body: JSON.stringify({ serverPubkey: candidate }),
+      });
+      if (!result.configured) {
+        throw new Error("Server pubkey rejected");
+      }
+      hidePubkeyGate();
+      showToast("Cabinet unlocked");
+      showStatus("Syncing wallet…");
+      startBalancePolling();
+    } catch (error) {
+      console.error(error);
+      const message = error instanceof Error ? error.message : "Failed to configure pubkey";
+      setPubkeyError(message || "Failed to configure pubkey");
+      showStatus("Pubkey failed", true);
+      if (pubkeyHint) {
+        pubkeyHint.textContent = "Try again with your Cashubash server key.";
+      }
+      if (pubkeyInput) {
+        pubkeyInput.focus();
+        pubkeyInput.select();
+      }
+      return;
+    } finally {
+      pubkeySubmit.textContent = "Boot wallet";
+      setPubkeyFormDisabled(false);
+    }
+  });
+
+  void bootstrapPubkeyStatus();
+}
+
 async function updateBalance(): Promise<void> {
+  if (!balanceSyncEnabled) {
+    return;
+  }
   try {
     const data = await api<BalanceResponse>("/api/balance");
     if (balanceDisplay) {
@@ -377,6 +538,7 @@ function setupCopyEcashToken(): void {
 }
 
 function init(): void {
+  showStatus("Booting cabinet…");
   handleMoreToggles();
   listenForInvoiceGeneration();
   listenForInvoicePayment();
@@ -384,8 +546,7 @@ function init(): void {
   listenForSendEcash();
   setupCopyInvoice();
   setupCopyEcashToken();
-  updateBalance();
-  setInterval(updateBalance, 3000);
+  setupPubkeyFlow();
 }
 
 init();

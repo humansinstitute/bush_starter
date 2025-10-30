@@ -17,6 +17,28 @@
   </head>
   <body>
     <div class="scanlines"></div>
+    <div id="pubkey-gate" class="pubkey-overlay" hidden>
+      <div class="life-screen neon-edge">
+        <h2>Intset PubKey to continue…</h2>
+        <p class="life-caption">No credits detected. Paste a server pubkey to revive this cabinet.</p>
+        <form id="pubkey-form" class="pixel-form" autocomplete="off">
+          <label class="pixel-field" data-required>
+            <span>Server pubkey</span>
+            <input
+              type="text"
+              id="pubkey-input"
+              name="serverPubkey"
+              placeholder="npub1..."
+              required
+              spellcheck="false"
+            />
+          </label>
+          <button type="submit" class="pixel-button" id="pubkey-submit">Boot wallet</button>
+          <p id="pubkey-hint" class="pubkey-hint">Drop your lightning coordinates to load wallet data.</p>
+          <output id="pubkey-error" class="pubkey-error" role="alert"></output>
+        </form>
+      </div>
+    </div>
     <main class="wallet-shell">
       <header class="wallet-header">
         <h1>Cashubash Arcade</h1>

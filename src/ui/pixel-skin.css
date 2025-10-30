@@ -46,6 +46,68 @@ body {
   z-index: 1;
 }
 
+.pubkey-overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at center, rgba(56, 0, 102, 0.85), rgba(8, 0, 22, 0.95));
+  backdrop-filter: blur(4px);
+  z-index: 3;
+  padding: 1.5rem;
+}
+
+.pubkey-overlay[hidden] {
+  display: none;
+}
+
+.life-screen {
+  max-width: min(22rem, 100%);
+  width: min(22rem, 100%);
+  background: var(--panel-bg);
+  border: 2px solid var(--panel-border);
+  padding: 1.75rem 1.5rem;
+  border-radius: 14px;
+  box-shadow: 0 18px 0 rgba(4, 0, 12, 0.8), 0 0 35px rgba(255, 100, 198, 0.35);
+  display: grid;
+  gap: 1rem;
+  text-align: center;
+  position: relative;
+}
+
+.life-screen h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--crt-yellow);
+  text-shadow: 0 0 10px rgba(255, 230, 109, 0.55);
+}
+
+.life-caption {
+  margin: 0;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.pubkey-hint {
+  margin: 0;
+  font-size: 0.6rem;
+  color: var(--crt-blue);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.pubkey-error {
+  margin: 0;
+  display: block;
+  min-height: 1rem;
+  font-size: 0.6rem;
+  color: var(--danger);
+  letter-spacing: 0.08em;
+}
+
 .wallet-shell {
   position: relative;
   z-index: 2;

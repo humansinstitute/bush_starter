@@ -265,7 +265,63 @@ export class CashubashClient implements Cashubash {
  * without creating a new instance.
  *
  * @example
- * import { cashubash } from './CashubashClient';
- * const result = await cashubash.SomeMethod();
+ * import { getCashubash } from './CashubashClient';
+ * const result = await getCashubash().SomeMethod();
  */
-export const cashubash = new CashubashClient();
+let activeClient: CashubashClient | null = null;
+let activeServerPubkey: string | undefined = CashubashClient.SERVER_PUBKEY;
+
+export function hasServerPubkey(): boolean {
+  return typeof activeServerPubkey === "string" && activeServerPubkey.trim().length > 0;
+}
+
+export function getActiveServerPubkey(): string | undefined {
+  const configured = activeServerPubkey?.trim();
+  return configured ? configured : undefined;
+}
+
+function instantiateClient(serverPubkey: string): CashubashClient {
+  return new CashubashClient({ serverPubkey });
+}
+
+export function getCashubash(): CashubashClient {
+  const configured = getActiveServerPubkey();
+  if (!configured) {
+    throw new Error("SERVER_PUBKEY is not configured");
+  }
+
+  if (!activeClient) {
+    activeClient = instantiateClient(configured);
+  }
+
+  return activeClient;
+}
+
+export async function configureCashubash(serverPubkey: string): Promise<void> {
+  const trimmed = serverPubkey.trim();
+  if (!trimmed) {
+    throw new Error("Server pubkey cannot be empty");
+  }
+
+  if (trimmed === getActiveServerPubkey()) {
+    return;
+  }
+
+  if (activeClient) {
+    await activeClient.disconnect().catch((error) => {
+      console.warn("[CashubashClient] Failed to disconnect existing client", error);
+    });
+  }
+
+  activeServerPubkey = trimmed;
+  activeClient = instantiateClient(trimmed);
+}
+
+export async function resetCashubash(): Promise<void> {
+  if (activeClient) {
+    await activeClient.disconnect().catch((error) => {
+      console.warn("[CashubashClient] Failed to disconnect existing client", error);
+    });
+  }
+  activeClient = null;
+}

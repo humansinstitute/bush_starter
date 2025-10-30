@@ -1,7 +1,13 @@
 import { once } from "node:events";
 import net from "node:net";
 import walletHtml from "./wallet.html";
-import { cashubash } from "./ctxcn/CashubashClient.ts";
+import {
+  configureCashubash,
+  getActiveServerPubkey,
+  getCashubash,
+  hasServerPubkey,
+} from "./ctxcn/CashubashClient.ts";
+import type { CashubashClient } from "./ctxcn/CashubashClient.ts";
 
 type LogLevel = "info" | "error";
 
@@ -84,6 +90,20 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function serviceUnavailable(message: string): Response {
+  logger.info({ message }, "service unavailable");
+  return jsonResponse({ message }, 503);
+}
+
+function getClientOrNull(): CashubashClient | null {
+  try {
+    return getCashubash();
+  } catch (error) {
+    logger.info({ error }, "cashubash client not ready");
+    return null;
+  }
+}
+
 function badRequest(message: string): Response {
   logger.error({ message }, "bad request");
   return jsonResponse({ message }, 400);
@@ -95,10 +115,49 @@ async function start() {
     port,
     routes: {
       "/": walletHtml,
+      "/api/server-pubkey": {
+        GET: () =>
+          jsonResponse({
+            hasServerPubkey: hasServerPubkey(),
+            serverPubkey: getActiveServerPubkey(),
+          }),
+        POST: async (request: Request) => {
+          let payload: { serverPubkey?: string };
+          try {
+            payload = (await request.json()) as { serverPubkey?: string };
+          } catch {
+            return badRequest("Invalid JSON body");
+          }
+
+          const candidate = payload.serverPubkey;
+          if (typeof candidate !== "string") {
+            return badRequest("serverPubkey must be a string");
+          }
+
+          try {
+            await configureCashubash(candidate);
+            const client = getClientOrNull();
+            if (!client) {
+              return serviceUnavailable("Failed to configure server pubkey");
+            }
+            return jsonResponse({
+              configured: true,
+              serverPubkey: getActiveServerPubkey(),
+            });
+          } catch (error) {
+            logger.error({ error }, "failed to configure server pubkey");
+            return jsonResponse({ message: "Failed to configure server pubkey" }, 400);
+          }
+        },
+      },
       "/api/balance": {
         GET: async () => {
+          const client = getClientOrNull();
+          if (!client) {
+            return serviceUnavailable("Server pubkey not configured");
+          }
           try {
-            const { result } = await cashubash.GetBalance({});
+            const { result } = await client.GetBalance({});
             return jsonResponse({ balance: result.balance });
           } catch (error) {
             logger.error({ error }, "failed to fetch balance");
@@ -117,8 +176,12 @@ async function start() {
           if (typeof payload.amount !== "number" || !Number.isFinite(payload.amount) || payload.amount <= 0) {
             return badRequest("Amount must be a positive number");
           }
+          const client = getClientOrNull();
+          if (!client) {
+            return serviceUnavailable("Server pubkey not configured");
+          }
           try {
-            const { result } = await cashubash.MakeInvoice(
+            const { result } = await client.MakeInvoice(
               payload.amount,
               payload.description,
               undefined,
@@ -150,8 +213,12 @@ async function start() {
           if (typeof amount === "number" && (!Number.isFinite(amount) || amount <= 0)) {
             return badRequest("Amount override must be positive");
           }
+          const client = getClientOrNull();
+          if (!client) {
+            return serviceUnavailable("Server pubkey not configured");
+          }
           try {
-            const { result } = await cashubash.PayInvoice(payload.invoice, amount);
+            const { result } = await client.PayInvoice(payload.invoice, amount);
             return jsonResponse({
               preimage: result.preimage,
               feesPaid: result.fees_paid,
@@ -173,8 +240,12 @@ async function start() {
           if (typeof payload.amount !== "number" || !Number.isFinite(payload.amount) || payload.amount <= 0) {
             return badRequest("Amount must be a positive number");
           }
+          const client = getClientOrNull();
+          if (!client) {
+            return serviceUnavailable("Server pubkey not configured");
+          }
           try {
-            const result = await cashubash.SendEcash(payload.amount);
+            const result = await client.SendEcash(payload.amount);
             return jsonResponse({
               cashuToken: result.cashuToken,
               sentAmount: result.sentAmount,
