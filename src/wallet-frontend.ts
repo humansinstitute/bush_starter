@@ -35,6 +35,10 @@ interface ConfigurePubkeyResponse {
   serverPubkey?: string;
 }
 
+interface ClearPubkeyResponse {
+  cleared: boolean;
+}
+
 const statusLine = document.querySelector<HTMLParagraphElement>("#status-line");
 const balanceDisplay = document.querySelector<HTMLSpanElement>("#balance-display");
 const makeInvoiceForm = document.querySelector<HTMLFormElement>("#make-invoice-form");
@@ -59,6 +63,11 @@ const pubkeyInput = document.querySelector<HTMLInputElement>("#pubkey-input");
 const pubkeySubmit = document.querySelector<HTMLButtonElement>("#pubkey-submit");
 const pubkeyHint = document.querySelector<HTMLParagraphElement>("#pubkey-hint");
 const pubkeyError = document.querySelector<HTMLOutputElement>("#pubkey-error");
+const exitButton = document.querySelector<HTMLButtonElement>("#exit-button");
+const exitOverlay = document.querySelector<HTMLDivElement>("#exit-overlay");
+const exitConfirmButton = document.querySelector<HTMLButtonElement>("#exit-confirm");
+const exitCancelButton = document.querySelector<HTMLButtonElement>("#exit-cancel");
+const exitWarning = document.querySelector<HTMLParagraphElement>("#exit-warning");
 
 let balanceIntervalId: number | null = null;
 let balanceSyncEnabled = false;
@@ -578,6 +587,65 @@ function setupCopyEcashToken(): void {
   });
 }
 
+function setupExitFlow(): void {
+  if (!exitButton || !exitOverlay || !exitConfirmButton || !exitCancelButton) {
+    return;
+  }
+
+  const originalWarning = exitWarning?.textContent ?? null;
+
+  const hideExitOverlay = (): void => {
+    exitOverlay.setAttribute("hidden", "");
+    exitConfirmButton.disabled = false;
+    exitConfirmButton.textContent = "Pull the plug";
+    if (exitWarning && originalWarning !== null) {
+      exitWarning.textContent = originalWarning;
+    }
+  };
+
+  exitButton.addEventListener("click", () => {
+    exitOverlay.removeAttribute("hidden");
+    showStatus("Ready to power down?");
+  });
+
+  exitCancelButton.addEventListener("click", () => {
+    hideExitOverlay();
+    showStatus("Cabinet stays live");
+  });
+
+  exitConfirmButton.addEventListener("click", async () => {
+    if (exitConfirmButton.disabled) {
+      return;
+    }
+    exitConfirmButton.disabled = true;
+    exitConfirmButton.textContent = "Powering down…";
+    try {
+      await api<ClearPubkeyResponse>("/api/server-pubkey", { method: "DELETE" });
+      showToast("Cabinet powered down");
+      stopBalancePolling();
+      if (pubkeyInput) {
+        pubkeyInput.value = "";
+      }
+      hideExitOverlay();
+      showPubkeyGate();
+      setPubkeyError("Server pubkey removed. Insert a new pubkey to continue.");
+      if (pubkeyHint) {
+        pubkeyHint.textContent = "Cabinet awaits a fresh keycard.";
+      }
+      showStatus("Awaiting server pubkey…");
+    } catch (error) {
+      console.error(error);
+      if (exitWarning) {
+        exitWarning.textContent = "Power down failed. Try again or refresh the cabinet.";
+      }
+      showStatus("Failed to power down cabinet", true);
+      showToast("Power down failed");
+      exitConfirmButton.disabled = false;
+      exitConfirmButton.textContent = "Pull the plug";
+    }
+  });
+}
+
 function init(): void {
   showStatus("Booting cabinet…");
   handleMoreToggles();
@@ -587,6 +655,7 @@ function init(): void {
   listenForSendEcash();
   setupCopyInvoice();
   setupCopyEcashToken();
+  setupExitFlow();
   setupPubkeyFlow();
 }
 

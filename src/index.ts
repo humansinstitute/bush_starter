@@ -278,6 +278,18 @@ async function start() {
             return jsonResponse({ message: "Failed to configure server pubkey" }, 400, headers);
           }
         },
+        DELETE: async (request: Request) => {
+          const sessionHandle = ensureSession(request);
+          const headers = sessionHeaders(sessionHandle);
+          try {
+            await disconnectSessionClient(sessionHandle.context);
+          } catch (error) {
+            logger.error({ error }, "failed to disconnect session during pubkey reset");
+          }
+          sessionHandle.context.client = undefined;
+          sessionHandle.context.serverPubkey = undefined;
+          return jsonResponse({ cleared: true }, 200, headers);
+        },
       },
       "/api/balance": {
         GET: async (request: Request) => {

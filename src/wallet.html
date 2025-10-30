@@ -17,6 +17,18 @@
   </head>
   <body>
     <div class="scanlines"></div>
+    <div id="exit-overlay" class="pubkey-overlay" hidden>
+      <div class="life-screen neon-edge">
+        <h2>Power Down Cabinet?</h2>
+        <p class="life-caption" id="exit-warning">
+          This will wipe the linked server pubkey and boot you back to the title screen. You'll need to insert a new pubkey to continue.
+        </p>
+        <div class="exit-actions">
+          <button type="button" class="pixel-button" id="exit-confirm">Pull the plug</button>
+          <button type="button" class="pixel-button pixel-button-ghost" id="exit-cancel">Keep playing</button>
+        </div>
+      </div>
+    </div>
     <div id="pubkey-gate" class="pubkey-overlay" hidden>
       <div class="life-screen neon-edge">
         <h2>Insert PubKey to continue…</h2>
@@ -48,6 +60,9 @@
           <span id="balance-display" class="balance-value">-- sats</span>
         </div>
         <p class="status-line" id="status-line">Loading balance…</p>
+        <button type="button" id="exit-button" class="pixel-button pixel-button-ghost exit-button">
+          Power down
+        </button>
       </header>
 
       <section class="wallet-grid">
