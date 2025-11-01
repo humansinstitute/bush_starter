@@ -72,8 +72,20 @@ const exitWarning = document.querySelector<HTMLParagraphElement>("#exit-warning"
 let balanceIntervalId: number | null = null;
 let balanceSyncEnabled = false;
 
+const basePath = (() => {
+  const segments = window.location.pathname.split("/").filter(Boolean);
+  if (segments.length === 0) {
+    return "";
+  }
+  const candidate = segments[0];
+  return /^\d+$/.test(candidate) ? `/${candidate}` : "";
+})();
+
 async function api<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, {
+  const resolvedInput =
+    typeof input === "string" && input.startsWith("/") ? `${basePath}${input}` : input;
+
+  const response = await fetch(resolvedInput, {
     headers: {
       "Content-Type": "application/json",
     },
