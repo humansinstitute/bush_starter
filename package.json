@@ -5,8 +5,6 @@
   "scripts": {
     "setup": "bun install",
     "start": "bun --hot src/index.ts",
-    "stop": "bun run scripts/manage.ts stop",
-    "restart": "bun run scripts/manage.ts restart",
     "dev": "bun run src/index.ts"
   },
   "devDependencies": {
