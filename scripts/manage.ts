@@ -64,13 +64,41 @@ async function startServer() {
 
   const child = spawn("bun", ["run", "src/index.ts"], {
     cwd: PROJECT_ROOT,
-    stdio: "inherit",
+    stdio: ["inherit", "pipe", "inherit"],
   });
 
   if (!child.pid) {
     console.error("Failed to start server process.");
     process.exit(1);
   }
+
+  let wingmanLogged = false;
+  let stdoutBuffer = "";
+
+  child.stdout?.on("data", (chunk) => {
+    const text = chunk.toString();
+    process.stdout.write(chunk);
+    if (wingmanLogged) {
+      return;
+    }
+    stdoutBuffer += text;
+    let newlineIndex = stdoutBuffer.indexOf("\n");
+    while (newlineIndex !== -1) {
+      const line = stdoutBuffer.slice(0, newlineIndex).trim();
+      stdoutBuffer = stdoutBuffer.slice(newlineIndex + 1);
+      if (line.includes("[WINGMAN21-URL]")) {
+        wingmanLogged = true;
+        break;
+      }
+      const match = line.match(/wallet ready on port (\d+)/i);
+      if (match?.[1]) {
+        console.log(`[WINGMAN21-URL]https://host.otherstuff.ai/${match[1]}`);
+        wingmanLogged = true;
+        break;
+      }
+      newlineIndex = stdoutBuffer.indexOf("\n");
+    }
+  });
 
   writePidFile(child.pid);
   console.log(`Started server on PID ${child.pid}`);
