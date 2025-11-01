@@ -24,6 +24,41 @@ interface SendEcashBody {
   amount?: number;
 }
 
+type RouteHandler = (request: Request) => Response | Promise<Response>;
+
+type RouteEntry =
+  | Response
+  | {
+      GET?: RouteHandler;
+      POST?: RouteHandler;
+      DELETE?: RouteHandler;
+    };
+
+function createPrefixedRoutes(routes: Record<string, RouteEntry>, basePath: string): Record<string, RouteEntry> {
+  const result: Record<string, RouteEntry> = {};
+  const normalizedBase = basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
+  const trailingBase = `${normalizedBase}/`;
+
+  result[normalizedBase] = new Response(null, {
+    status: 302,
+    headers: {
+      Location: trailingBase,
+    },
+  });
+
+  for (const [path, entry] of Object.entries(routes)) {
+    if (path === "/") {
+      result[trailingBase] = entry;
+      continue;
+    }
+
+    const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
+    result[`${trailingBase}${normalizedPath}`] = entry;
+  }
+
+  return result;
+}
+
 function createLogger({ name }: { name: string }) {
   const prefix = `[${name}]`;
 
@@ -210,205 +245,230 @@ function ensureSessionClient(context: SessionContext): CashubashClient | null {
 
 async function start() {
   const port = await findAvailablePort(41000);
-  const server = Bun.serve({
-    port,
-    routes: {
-      "/": walletHtml,
-      "/api/server-pubkey": {
-        GET: (request: Request) => {
-          const sessionHandle = ensureSession(request);
-          const headers = sessionHeaders(sessionHandle);
+  const basePath = `/${port}`;
+
+  const baseRoutes: Record<string, RouteEntry> = {
+    "/": walletHtml,
+    "/api/server-pubkey": {
+      GET: (request: Request) => {
+        const sessionHandle = ensureSession(request);
+        const headers = sessionHeaders(sessionHandle);
+        return jsonResponse(
+          {
+            hasServerPubkey: Boolean(sessionHandle.context.serverPubkey),
+            serverPubkey: sessionHandle.context.serverPubkey,
+          },
+          200,
+          headers
+        );
+      },
+      POST: async (request: Request) => {
+        const sessionHandle = ensureSession(request);
+        const headers = sessionHeaders(sessionHandle);
+        let payload: { serverPubkey?: string };
+        try {
+          payload = (await request.json()) as { serverPubkey?: string };
+        } catch {
+          return badRequest("Invalid JSON body", headers);
+        }
+
+        const candidate = payload.serverPubkey;
+        if (typeof candidate !== "string") {
+          return badRequest("serverPubkey must be a string", headers);
+        }
+
+        try {
+          const trimmed = candidate.trim();
+          if (!trimmed) {
+            return badRequest("Server pubkey cannot be empty", headers);
+          }
+
+          if (sessionHandle.context.serverPubkey === trimmed) {
+            ensureSessionClient(sessionHandle.context);
+            return jsonResponse(
+              {
+                configured: true,
+                serverPubkey: sessionHandle.context.serverPubkey,
+              },
+              200,
+              headers
+            );
+          }
+
+          await disconnectSessionClient(sessionHandle.context);
+          sessionHandle.context.serverPubkey = trimmed;
+          const client = ensureSessionClient(sessionHandle.context);
+          if (!client) {
+            sessionHandle.context.serverPubkey = undefined;
+            return serviceUnavailable("Failed to configure server pubkey", headers);
+          }
           return jsonResponse(
             {
-              hasServerPubkey: Boolean(sessionHandle.context.serverPubkey),
+              configured: true,
               serverPubkey: sessionHandle.context.serverPubkey,
             },
             200,
             headers
           );
-        },
-        POST: async (request: Request) => {
-          const sessionHandle = ensureSession(request);
-          const headers = sessionHeaders(sessionHandle);
-          let payload: { serverPubkey?: string };
-          try {
-            payload = (await request.json()) as { serverPubkey?: string };
-          } catch {
-            return badRequest("Invalid JSON body", headers);
-          }
-
-          const candidate = payload.serverPubkey;
-          if (typeof candidate !== "string") {
-            return badRequest("serverPubkey must be a string", headers);
-          }
-
-          try {
-            const trimmed = candidate.trim();
-            if (!trimmed) {
-              return badRequest("Server pubkey cannot be empty", headers);
-            }
-
-            if (sessionHandle.context.serverPubkey === trimmed) {
-              ensureSessionClient(sessionHandle.context);
-              return jsonResponse(
-                {
-                  configured: true,
-                  serverPubkey: sessionHandle.context.serverPubkey,
-                },
-                200,
-                headers
-              );
-            }
-
-            await disconnectSessionClient(sessionHandle.context);
-            sessionHandle.context.serverPubkey = trimmed;
-            const client = ensureSessionClient(sessionHandle.context);
-            if (!client) {
-              sessionHandle.context.serverPubkey = undefined;
-              return serviceUnavailable("Failed to configure server pubkey", headers);
-            }
-            return jsonResponse({
-              configured: true,
-              serverPubkey: sessionHandle.context.serverPubkey,
-            }, 200, headers);
-          } catch (error) {
-            logger.error({ error }, "failed to configure server pubkey");
-            await disconnectSessionClient(sessionHandle.context);
-            sessionHandle.context.serverPubkey = undefined;
-            return jsonResponse({ message: "Failed to configure server pubkey" }, 400, headers);
-          }
-        },
-        DELETE: async (request: Request) => {
-          const sessionHandle = ensureSession(request);
-          const headers = sessionHeaders(sessionHandle);
-          try {
-            await disconnectSessionClient(sessionHandle.context);
-          } catch (error) {
-            logger.error({ error }, "failed to disconnect session during pubkey reset");
-          }
-          sessionHandle.context.client = undefined;
+        } catch (error) {
+          logger.error({ error }, "failed to configure server pubkey");
+          await disconnectSessionClient(sessionHandle.context);
           sessionHandle.context.serverPubkey = undefined;
-          return jsonResponse({ cleared: true }, 200, headers);
-        },
+          return jsonResponse({ message: "Failed to configure server pubkey" }, 400, headers);
+        }
       },
-      "/api/balance": {
-        GET: async (request: Request) => {
-          const sessionHandle = ensureSession(request);
-          const headers = sessionHeaders(sessionHandle);
-          const client = ensureSessionClient(sessionHandle.context);
-          if (!client) {
-            return serviceUnavailable("Server pubkey not configured", headers);
-          }
-          try {
-            const { result } = await client.GetBalance({});
-            return jsonResponse({ balance: result.balance }, 200, headers);
-          } catch (error) {
-            logger.error({ error }, "failed to fetch balance");
-            return jsonResponse({ message: "Failed to fetch balance" }, 502, headers);
-          }
-        },
+      DELETE: async (request: Request) => {
+        const sessionHandle = ensureSession(request);
+        const headers = sessionHeaders(sessionHandle);
+        try {
+          await disconnectSessionClient(sessionHandle.context);
+        } catch (error) {
+          logger.error({ error }, "failed to disconnect session during pubkey reset");
+        }
+        sessionHandle.context.client = undefined;
+        sessionHandle.context.serverPubkey = undefined;
+        return jsonResponse({ cleared: true }, 200, headers);
       },
-      "/api/make-invoice": {
-        POST: async (request: Request) => {
-          const sessionHandle = ensureSession(request);
-          const headers = sessionHeaders(sessionHandle);
-          let payload: MakeInvoiceBody;
-          try {
-            payload = (await request.json()) as MakeInvoiceBody;
-          } catch {
-            return badRequest("Invalid JSON body", headers);
-          }
-          if (typeof payload.amount !== "number" || !Number.isFinite(payload.amount) || payload.amount <= 0) {
-            return badRequest("Amount must be a positive number", headers);
-          }
-          const client = ensureSessionClient(sessionHandle.context);
-          if (!client) {
-            return serviceUnavailable("Server pubkey not configured", headers);
-          }
-          try {
-            const { result } = await client.MakeInvoice(
-              payload.amount,
-              payload.description,
-              undefined,
-              payload.expiry
-            );
-            return jsonResponse({
+    },
+    "/api/balance": {
+      GET: async (request: Request) => {
+        const sessionHandle = ensureSession(request);
+        const headers = sessionHeaders(sessionHandle);
+        const client = ensureSessionClient(sessionHandle.context);
+        if (!client) {
+          return serviceUnavailable("Server pubkey not configured", headers);
+        }
+        try {
+          const { result } = await client.GetBalance({});
+          return jsonResponse({ balance: result.balance }, 200, headers);
+        } catch (error) {
+          logger.error({ error }, "failed to fetch balance");
+          return jsonResponse({ message: "Failed to fetch balance" }, 502, headers);
+        }
+      },
+    },
+    "/api/make-invoice": {
+      POST: async (request: Request) => {
+        const sessionHandle = ensureSession(request);
+        const headers = sessionHeaders(sessionHandle);
+        let payload: MakeInvoiceBody;
+        try {
+          payload = (await request.json()) as MakeInvoiceBody;
+        } catch {
+          return badRequest("Invalid JSON body", headers);
+        }
+        if (typeof payload.amount !== "number" || !Number.isFinite(payload.amount) || payload.amount <= 0) {
+          return badRequest("Amount must be a positive number", headers);
+        }
+        const client = ensureSessionClient(sessionHandle.context);
+        if (!client) {
+          return serviceUnavailable("Server pubkey not configured", headers);
+        }
+        try {
+          const { result } = await client.MakeInvoice(
+            payload.amount,
+            payload.description,
+            undefined,
+            payload.expiry
+          );
+          return jsonResponse(
+            {
               invoice: result.invoice,
               amount: result.amount,
               expiresAt: result.expires_at,
-            }, 200, headers);
-          } catch (error) {
-            logger.error({ error }, "failed to make invoice");
-            return jsonResponse({ message: "Failed to make invoice" }, 502, headers);
-          }
-        },
+            },
+            200,
+            headers
+          );
+        } catch (error) {
+          logger.error({ error }, "failed to make invoice");
+          return jsonResponse({ message: "Failed to make invoice" }, 502, headers);
+        }
       },
-      "/api/pay-invoice": {
-        POST: async (request: Request) => {
-          const sessionHandle = ensureSession(request);
-          const headers = sessionHeaders(sessionHandle);
-          let payload: PayInvoiceBody;
-          try {
-            payload = (await request.json()) as PayInvoiceBody;
-          } catch {
-            return badRequest("Invalid JSON body", headers);
-          }
-          if (!payload.invoice) {
-            return badRequest("Invoice is required", headers);
-          }
-          const amount = payload.amount;
-          if (typeof amount === "number" && (!Number.isFinite(amount) || amount <= 0)) {
-            return badRequest("Amount override must be positive", headers);
-          }
-          const client = ensureSessionClient(sessionHandle.context);
-          if (!client) {
-            return serviceUnavailable("Server pubkey not configured", headers);
-          }
-          try {
-            const { result } = await client.PayInvoice(payload.invoice, amount);
-            return jsonResponse({
+    },
+    "/api/pay-invoice": {
+      POST: async (request: Request) => {
+        const sessionHandle = ensureSession(request);
+        const headers = sessionHeaders(sessionHandle);
+        let payload: PayInvoiceBody;
+        try {
+          payload = (await request.json()) as PayInvoiceBody;
+        } catch {
+          return badRequest("Invalid JSON body", headers);
+        }
+        if (!payload.invoice) {
+          return badRequest("Invoice is required", headers);
+        }
+        const amount = payload.amount;
+        if (typeof amount === "number" && (!Number.isFinite(amount) || amount <= 0)) {
+          return badRequest("Amount override must be positive", headers);
+        }
+        const client = ensureSessionClient(sessionHandle.context);
+        if (!client) {
+          return serviceUnavailable("Server pubkey not configured", headers);
+        }
+        try {
+          const { result } = await client.PayInvoice(payload.invoice, amount);
+          return jsonResponse(
+            {
               preimage: result.preimage,
               feesPaid: result.fees_paid,
-            }, 200, headers);
-          } catch (error) {
-            logger.error({ error }, "failed to pay invoice");
-            return jsonResponse({ message: "Failed to pay invoice" }, 502, headers);
-          }
-        },
+            },
+            200,
+            headers
+          );
+        } catch (error) {
+          logger.error({ error }, "failed to pay invoice");
+          return jsonResponse({ message: "Failed to pay invoice" }, 502, headers);
+        }
       },
-      "/api/send-ecash": {
-        POST: async (request: Request) => {
-          const sessionHandle = ensureSession(request);
-          const headers = sessionHeaders(sessionHandle);
-          let payload: SendEcashBody;
-          try {
-            payload = (await request.json()) as SendEcashBody;
-          } catch {
-            return badRequest("Invalid JSON body", headers);
-          }
-          if (typeof payload.amount !== "number" || !Number.isFinite(payload.amount) || payload.amount <= 0) {
-            return badRequest("Amount must be a positive number", headers);
-          }
-          const client = ensureSessionClient(sessionHandle.context);
-          if (!client) {
-            return serviceUnavailable("Server pubkey not configured", headers);
-          }
-          try {
-            const result = await client.SendEcash(payload.amount);
-            return jsonResponse({
+    },
+    "/api/send-ecash": {
+      POST: async (request: Request) => {
+        const sessionHandle = ensureSession(request);
+        const headers = sessionHeaders(sessionHandle);
+        let payload: SendEcashBody;
+        try {
+          payload = (await request.json()) as SendEcashBody;
+        } catch {
+          return badRequest("Invalid JSON body", headers);
+        }
+        if (typeof payload.amount !== "number" || !Number.isFinite(payload.amount) || payload.amount <= 0) {
+          return badRequest("Amount must be a positive number", headers);
+        }
+        const client = ensureSessionClient(sessionHandle.context);
+        if (!client) {
+          return serviceUnavailable("Server pubkey not configured", headers);
+        }
+        try {
+          const result = await client.SendEcash(payload.amount);
+          return jsonResponse(
+            {
               cashuToken: result.cashuToken,
               sentAmount: result.sentAmount,
               keepAmount: result.keepAmount,
               proofCount: result.proofCount,
               timestamp: result.timestamp,
-            }, 200, headers);
-          } catch (error) {
-            logger.error({ error }, "failed to send ecash");
-            return jsonResponse({ message: "Failed to mint ecash" }, 502, headers);
-          }
-        },
+            },
+            200,
+            headers
+          );
+        } catch (error) {
+          logger.error({ error }, "failed to send ecash");
+          return jsonResponse({ message: "Failed to mint ecash" }, 502, headers);
+        }
       },
     },
+  };
+
+  const routesWithBasePath = {
+    ...baseRoutes,
+    ...createPrefixedRoutes(baseRoutes, basePath),
+  };
+
+  const server = Bun.serve({
+    port,
+    routes: routesWithBasePath,
     error(err) {
       logger.error({ err }, "server error");
       return new Response("Internal Server Error", { status: 500 });
