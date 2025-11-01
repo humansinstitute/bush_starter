@@ -209,7 +209,7 @@ function ensureSessionClient(context: SessionContext): CashubashClient | null {
 }
 
 async function start() {
-  const port = await findAvailablePort(3121);
+  const port = await findAvailablePort(41000);
   const server = Bun.serve({
     port,
     routes: {
