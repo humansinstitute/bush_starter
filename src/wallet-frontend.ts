@@ -94,7 +94,7 @@ function showStatus(message: string, isError = false): void {
     return;
   }
   statusLine.textContent = message;
-  statusLine.style.color = isError ? "#ff3c7c" : "var(--text-muted)";
+  statusLine.style.color = isError ? "var(--signal-error)" : "var(--text-muted)";
 }
 
 function showToast(message: string): void {
@@ -163,7 +163,7 @@ function showPubkeyGate(): void {
   setPubkeyFormDisabled(false);
   setPubkeyError(null);
   if (pubkeyHint) {
-    pubkeyHint.textContent = "Feed the cabinet a server pubkey to respawn.";
+    pubkeyHint.textContent = "Provide the server pubkey to continue.";
   }
   if (pubkeyInput) {
     pubkeyInput.focus();
@@ -221,8 +221,8 @@ async function bootstrapPubkeyStatus(): Promise<void> {
   } catch (error) {
     console.error(error);
     showPubkeyGate();
-    setPubkeyError("Failed to inspect arcade cabinet");
-    showStatus("Failed to load wallet config", true);
+    setPubkeyError("Unable to verify server status");
+    showStatus("Failed to load wallet configuration", true);
   }
 }
 
@@ -243,7 +243,7 @@ function setupPubkeyFlow(): void {
     setPubkeyError(null);
     setPubkeyFormDisabled(true);
     if (pubkeyHint) {
-      pubkeyHint.textContent = "Linking relays…";
+      pubkeyHint.textContent = "Connecting to server…";
     }
     pubkeySubmit.textContent = "Connecting…";
 
@@ -256,16 +256,16 @@ function setupPubkeyFlow(): void {
         throw new Error("Server pubkey rejected");
       }
       hidePubkeyGate();
-      showToast("Cabinet unlocked");
+      showToast("Wallet linked");
       showStatus("Syncing wallet…");
       startBalancePolling();
     } catch (error) {
       console.error(error);
       const message = error instanceof Error ? error.message : "Failed to configure pubkey";
       setPubkeyError(message || "Failed to configure pubkey");
-      showStatus("Pubkey failed", true);
+      showStatus("Server pubkey error", true);
       if (pubkeyHint) {
-        pubkeyHint.textContent = "Try again with your Cashubash server key.";
+        pubkeyHint.textContent = "Verify the Cashubash server key and try again.";
       }
       if (pubkeyInput) {
         pubkeyInput.focus();
@@ -273,7 +273,7 @@ function setupPubkeyFlow(): void {
       }
       return;
     } finally {
-      pubkeySubmit.textContent = "Boot wallet";
+      pubkeySubmit.textContent = "Connect";
       setPubkeyFormDisabled(false);
     }
   });
@@ -357,7 +357,7 @@ function listenForInvoiceGeneration(): void {
     }
 
     try {
-      showStatus("Spawning invoice…");
+      showStatus("Generating invoice…");
       const result = await api<MakeInvoiceResponse>("/api/make-invoice", {
         method: "POST",
         body: JSON.stringify(payload),
@@ -369,7 +369,7 @@ function listenForInvoiceGeneration(): void {
       if (invoiceQrCanvas) {
         await renderInvoiceToCanvas(invoiceQrCanvas, result.invoice);
       }
-      showStatus("Invoice ready. Share and stack!");
+      showStatus("Invoice ready.");
       showToast("Invoice created");
       await updateBalance();
     } catch (error) {
@@ -412,19 +412,19 @@ function listenForInvoicePayment(): void {
         body: JSON.stringify(payload),
       });
       payInvoiceOutput.value = `Paid ✓ Preimage ${result.preimage.slice(0, 18)}…`;
-      payInvoiceOutput.style.color = "var(--crt-green)";
+      payInvoiceOutput.style.color = "var(--signal-positive)";
       showToast("Invoice paid");
       await updateBalance();
     } catch (error) {
       console.error(error);
       if (handleMissingPubkey(error)) {
         payInvoiceOutput.value = "";
-        payInvoiceOutput.style.color = "var(--danger)";
+        payInvoiceOutput.style.color = "var(--signal-error)";
         showToast("Server pubkey required");
         return;
       }
       payInvoiceOutput.value = "Payment failed";
-      payInvoiceOutput.style.color = "var(--danger)";
+      payInvoiceOutput.style.color = "var(--signal-error)";
       showToast("Payment failed");
     }
   });
@@ -520,7 +520,7 @@ function listenForSendEcash(): void {
         body: JSON.stringify({ amount }),
       });
       sendEcashOutput.value = `Token minted (${result.sentAmount.toLocaleString()} sats).`;
-      sendEcashOutput.style.color = "var(--crt-green)";
+      sendEcashOutput.style.color = "var(--signal-positive)";
       if (sendEcashTokenPanel && sendEcashTokenField) {
         sendEcashTokenField.value = result.cashuToken;
         sendEcashTokenPanel.removeAttribute("hidden");
@@ -540,7 +540,7 @@ function listenForSendEcash(): void {
         return;
       }
       sendEcashOutput.value = "Failed to mint token";
-      sendEcashOutput.style.color = "var(--danger)";
+      sendEcashOutput.style.color = "var(--signal-error)";
       showToast("Token mint failed");
     }
   });
@@ -597,7 +597,7 @@ function setupExitFlow(): void {
   const hideExitOverlay = (): void => {
     exitOverlay.setAttribute("hidden", "");
     exitConfirmButton.disabled = false;
-    exitConfirmButton.textContent = "Pull the plug";
+    exitConfirmButton.textContent = "Disconnect";
     if (exitWarning && originalWarning !== null) {
       exitWarning.textContent = originalWarning;
     }
@@ -605,12 +605,12 @@ function setupExitFlow(): void {
 
   exitButton.addEventListener("click", () => {
     exitOverlay.removeAttribute("hidden");
-    showStatus("Ready to power down?");
+    showStatus("Ready to disconnect?");
   });
 
   exitCancelButton.addEventListener("click", () => {
     hideExitOverlay();
-    showStatus("Cabinet stays live");
+    showStatus("Server connection retained");
   });
 
   exitConfirmButton.addEventListener("click", async () => {
@@ -618,10 +618,10 @@ function setupExitFlow(): void {
       return;
     }
     exitConfirmButton.disabled = true;
-    exitConfirmButton.textContent = "Powering down…";
+    exitConfirmButton.textContent = "Disconnecting…";
     try {
       await api<ClearPubkeyResponse>("/api/server-pubkey", { method: "DELETE" });
-      showToast("Cabinet powered down");
+      showToast("Server disconnected");
       stopBalancePolling();
       if (pubkeyInput) {
         pubkeyInput.value = "";
@@ -630,24 +630,24 @@ function setupExitFlow(): void {
       showPubkeyGate();
       setPubkeyError("Server pubkey removed. Insert a new pubkey to continue.");
       if (pubkeyHint) {
-        pubkeyHint.textContent = "Cabinet awaits a fresh keycard.";
+        pubkeyHint.textContent = "Connect with a new server key to continue.";
       }
       showStatus("Awaiting server pubkey…");
     } catch (error) {
       console.error(error);
       if (exitWarning) {
-        exitWarning.textContent = "Power down failed. Try again or refresh the cabinet.";
+        exitWarning.textContent = "Disconnect attempt failed. Try again or refresh the page.";
       }
-      showStatus("Failed to power down cabinet", true);
-      showToast("Power down failed");
+      showStatus("Failed to disconnect server", true);
+      showToast("Disconnect failed");
       exitConfirmButton.disabled = false;
-      exitConfirmButton.textContent = "Pull the plug";
+      exitConfirmButton.textContent = "Disconnect";
     }
   });
 }
 
 function init(): void {
-  showStatus("Booting cabinet…");
+  showStatus("Preparing wallet…");
   handleMoreToggles();
   listenForInvoiceGeneration();
   listenForInvoicePayment();

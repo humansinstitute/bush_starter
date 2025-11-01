@@ -1,40 +1,40 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="default">
   <head>
     <meta charset="utf-8" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
-    <title>8Bit Cashu Wallet</title>
-    <link rel="stylesheet" href="./ui/pixel-skin.css" />
+    <title>Cashubash Wallet</title>
+    <link rel="stylesheet" href="./ui/plain-skin.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
   </head>
   <body>
-    <div class="scanlines"></div>
-    <div id="exit-overlay" class="pubkey-overlay" hidden>
-      <div class="life-screen neon-edge">
-        <h2>Power Down Cabinet?</h2>
-        <p class="life-caption" id="exit-warning">
-          This will wipe the linked server pubkey and boot you back to the title screen. You'll need to insert a new pubkey to continue.
+    <!-- Theme hint: Override CSS variables in :root or set data-theme on <html> to adapt brand colors. -->
+    <div id="exit-overlay" class="modal-overlay" hidden>
+      <div class="modal-card">
+        <h2>Disconnect server?</h2>
+        <p class="modal-body" id="exit-warning">
+          Removing the linked server key will clear balance data for this session.
         </p>
-        <div class="exit-actions">
-          <button type="button" class="pixel-button" id="exit-confirm">Pull the plug</button>
-          <button type="button" class="pixel-button pixel-button-ghost" id="exit-cancel">Keep playing</button>
+        <div class="modal-actions">
+          <button type="button" class="ui-button" id="exit-confirm">Disconnect</button>
+          <button type="button" class="ui-button ui-button-secondary" id="exit-cancel">Cancel</button>
         </div>
       </div>
     </div>
-    <div id="pubkey-gate" class="pubkey-overlay" hidden>
-      <div class="life-screen neon-edge">
-        <h2>Insert PubKey to continue…</h2>
-        <p class="life-caption">No credits detected. Paste a server pubkey to revive this cabinet.</p>
-        <form id="pubkey-form" class="pixel-form" autocomplete="off">
-          <label class="pixel-field" data-required>
+    <div id="pubkey-gate" class="modal-overlay" hidden>
+      <div class="modal-card">
+        <h2>Add server access</h2>
+        <p class="modal-body">Paste the server pubkey to connect this wallet session.</p>
+        <form id="pubkey-form" class="form" autocomplete="off">
+          <label class="form-field" data-required>
             <span>Server pubkey</span>
             <input
               type="text"
@@ -45,32 +45,38 @@
               spellcheck="false"
             />
           </label>
-          <button type="submit" class="pixel-button" id="pubkey-submit">Boot wallet</button>
-          <p id="pubkey-hint" class="pubkey-hint">Drop your lightning coordinates to load wallet data.</p>
-          <output id="pubkey-error" class="pubkey-error" role="alert"></output>
+          <button type="submit" class="ui-button" id="pubkey-submit">Connect</button>
+          <p id="pubkey-hint" class="form-hint">Provide the Cashubash server key to load balances.</p>
+          <output id="pubkey-error" class="form-error" role="alert"></output>
         </form>
       </div>
     </div>
     <main class="wallet-shell">
       <header class="wallet-header">
-        <h1>Cashubash Arcade</h1>
-        <p class="tagline">Insert sats to continue</p>
-        <div class="balance-panel">
-          <span class="panel-label">Balance</span>
-          <span id="balance-display" class="balance-value">-- sats</span>
+        <div class="wallet-heading">
+          <h1>Cashubash Wallet</h1>
+          <p class="tagline">Lightning treasury overview</p>
         </div>
-        <p class="status-line" id="status-line">Loading balance…</p>
-        <button type="button" id="exit-button" class="pixel-button pixel-button-ghost exit-button">
-          Power down
+        <div class="header-meta">
+          <div class="balance-panel">
+            <span class="panel-label">Balance</span>
+            <span id="balance-display" class="balance-value">-- sats</span>
+          </div>
+          <p class="status-line" id="status-line">Loading balance…</p>
+        </div>
+        <button type="button" id="exit-button" class="ui-button ui-button-secondary exit-button">
+          Disconnect server
         </button>
       </header>
 
       <section class="wallet-grid">
-        <article class="card neon-edge" data-card="make-invoice">
-          <h2>Create Token</h2>
-          <p>Generate a fresh invoice to stack sats.</p>
-          <form id="make-invoice-form" class="pixel-form" autocomplete="off">
-            <label class="pixel-field" data-required>
+        <article class="card" data-card="make-invoice">
+          <div class="card-heading">
+            <h2>Create invoice</h2>
+            <p>Generate a Lightning invoice for incoming payments.</p>
+          </div>
+          <form id="make-invoice-form" class="form" autocomplete="off">
+            <label class="form-field" data-required>
               <span>Amount (sats)</span>
               <input
                 type="number"
@@ -81,20 +87,20 @@
                 required
               />
             </label>
-            <button type="button" class="more-toggle" data-target="make-invoice-more">
+            <button type="button" class="text-button more-toggle" data-target="make-invoice-more">
               More options
             </button>
             <div class="more-fields" id="make-invoice-more" hidden>
-              <label class="pixel-field">
+              <label class="form-field">
                 <span>Description</span>
                 <input
                   type="text"
                   name="description"
                   maxlength="128"
-                  placeholder="High score bounty"
+                  placeholder="Reference"
                 />
               </label>
-              <label class="pixel-field">
+              <label class="form-field">
                 <span>Expiry (seconds)</span>
                 <input
                   type="number"
@@ -105,42 +111,46 @@
                 />
               </label>
             </div>
-            <button type="submit" class="pixel-button">Spawn Invoice</button>
+            <button type="submit" class="ui-button">Generate invoice</button>
           </form>
           <div id="invoice-output" class="invoice-output" hidden>
             <canvas id="invoice-qr" class="invoice-qr" aria-hidden="true"></canvas>
-            <p>
+            <div class="invoice-details">
               <span class="panel-label">Invoice</span>
               <code id="invoice-string" class="invoice-string"></code>
-            </p>
-            <button type="button" id="copy-invoice" class="pixel-button">
-              Copy to clipboard
+            </div>
+            <button type="button" id="copy-invoice" class="ui-button">
+              Copy invoice
             </button>
           </div>
         </article>
 
-        <article class="card neon-edge" data-card="pay-invoice">
-          <h2>Pay Invoice</h2>
-          <p>Feed coins into a lightning cabinet.</p>
-          <form id="pay-invoice-form" class="pixel-form" autocomplete="off">
-            <label class="pixel-field" data-required>
+        <article class="card" data-card="pay-invoice">
+          <div class="card-heading">
+            <h2>Pay invoice</h2>
+            <p>Send sats to a Lightning invoice.</p>
+          </div>
+          <form id="pay-invoice-form" class="form" autocomplete="off">
+            <label class="form-field" data-required>
               <span>Invoice</span>
               <textarea
                 name="invoice"
                 rows="3"
-                placeholder="bolt11..."
+                placeholder="BOLT11 details"
                 required
               ></textarea>
             </label>
-            <button type="button" id="scan-invoice" class="pixel-button pixel-button-ghost">
-              Scan invoice
-            </button>
-            <button type="button" class="more-toggle" data-target="pay-invoice-more">
-              More options
-            </button>
+            <div class="form-actions">
+              <button type="button" id="scan-invoice" class="ui-button ui-button-secondary">
+                Scan invoice
+              </button>
+              <button type="button" class="text-button more-toggle" data-target="pay-invoice-more">
+                More options
+              </button>
+            </div>
             <div class="more-fields" id="pay-invoice-more" hidden>
-              <label class="pixel-field">
-                <span>Amount Override (sats)</span>
+              <label class="form-field">
+                <span>Amount override (sats)</span>
                 <input
                   type="number"
                   name="amount"
@@ -150,13 +160,13 @@
                 />
               </label>
             </div>
-            <button type="submit" class="pixel-button">Fire Lightning</button>
+            <button type="submit" class="ui-button">Pay invoice</button>
           </form>
           <section id="invoice-scanner-panel" class="scanner-panel" hidden>
             <h3>Scan for invoice</h3>
             <div id="invoice-scanner-view" class="scanner-view" role="img" aria-label="Live camera preview"></div>
             <div class="scanner-actions">
-              <button type="button" id="scanner-cancel" class="pixel-button pixel-button-ghost">
+              <button type="button" id="scanner-cancel" class="text-button">
                 Cancel
               </button>
             </div>
@@ -164,11 +174,13 @@
           <output id="pay-invoice-output" class="action-output" role="status"></output>
         </article>
 
-        <article class="card neon-edge" data-card="send-ecash">
-          <h2>Beam eCash</h2>
-          <p>Dispense tokens for your co-op crew.</p>
-          <form id="send-ecash-form" class="pixel-form" autocomplete="off">
-            <label class="pixel-field" data-required>
+        <article class="card" data-card="send-ecash">
+          <div class="card-heading">
+            <h2>Send eCash</h2>
+            <p>Create a token to share sats securely.</p>
+          </div>
+          <form id="send-ecash-form" class="form" autocomplete="off">
+            <label class="form-field" data-required>
               <span>Amount (sats)</span>
               <input
                 type="number"
@@ -179,10 +191,10 @@
                 required
               />
             </label>
-            <button type="submit" class="pixel-button">Mint Token</button>
+            <button type="submit" class="ui-button">Mint token</button>
           </form>
           <section id="send-ecash-token-panel" class="token-panel" hidden>
-            <label class="pixel-field">
+            <label class="form-field">
               <span>Minted token</span>
               <textarea
                 id="send-ecash-token"
@@ -191,7 +203,7 @@
               ></textarea>
             </label>
             <div class="token-actions">
-              <button type="button" id="copy-ecash-token" class="pixel-button pixel-button-ghost">
+              <button type="button" id="copy-ecash-token" class="ui-button ui-button-secondary">
                 Copy token
               </button>
             </div>
