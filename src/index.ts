@@ -300,7 +300,20 @@ function ensureSessionClient(context: SessionContext): CashubashClient | null {
 }
 
 async function start() {
-  const port = await findAvailablePort(41000);
+  const envPortRaw = Bun.env.PORT ?? process.env.PORT ?? null;
+  const preferredPort = (() => {
+    if (!envPortRaw) {
+      return null;
+    }
+    const parsed = Number.parseInt(envPortRaw, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 65535) {
+      logger.error({ envPortRaw }, "Invalid PORT value provided, falling back to auto selection");
+      return null;
+    }
+    return parsed;
+  })();
+
+  const port = preferredPort ?? (await findAvailablePort(41000));
   const basePrefix = `/${port}`;
 
   const assetDir = path.join(srcDir, "..", "tmp", "public");
