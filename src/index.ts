@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
+import { existsSync, mkdirSync } from "node:fs";
 import net from "node:net";
-import walletHtml from "./wallet.html";
+import path from "node:path";
 import { createCashubashClient, getDefaultServerPubkey } from "./ctxcn/CashubashClient.ts";
 import type { CashubashClient } from "./ctxcn/CashubashClient.ts";
 
@@ -22,41 +23,6 @@ interface PayInvoiceBody {
 
 interface SendEcashBody {
   amount?: number;
-}
-
-type RouteHandler = (request: Request) => Response | Promise<Response>;
-
-type RouteEntry =
-  | Response
-  | {
-      GET?: RouteHandler;
-      POST?: RouteHandler;
-      DELETE?: RouteHandler;
-    };
-
-function createPrefixedRoutes(routes: Record<string, RouteEntry>, basePath: string): Record<string, RouteEntry> {
-  const result: Record<string, RouteEntry> = {};
-  const normalizedBase = basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
-  const trailingBase = `${normalizedBase}/`;
-
-  result[normalizedBase] = new Response(null, {
-    status: 302,
-    headers: {
-      Location: trailingBase,
-    },
-  });
-
-  for (const [path, entry] of Object.entries(routes)) {
-    if (path === "/") {
-      result[trailingBase] = entry;
-      continue;
-    }
-
-    const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
-    result[`${trailingBase}${normalizedPath}`] = entry;
-  }
-
-  return result;
 }
 
 function createLogger({ name }: { name: string }) {
@@ -97,6 +63,47 @@ interface SessionHandle {
 }
 
 const sessions = new Map<string, SessionContext>();
+
+const srcDir = import.meta.dir;
+
+function ensureDirectory(dirPath: string): void {
+  if (!existsSync(dirPath)) {
+    mkdirSync(dirPath, { recursive: true });
+  }
+}
+
+function htmlResponse(body: string): Response {
+  return new Response(body, {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+function javascriptResponse(filePath: string): Response {
+  return new Response(Bun.file(filePath), {
+    headers: {
+      "Content-Type": "application/javascript; charset=utf-8",
+      "Cache-Control": "no-cache",
+    },
+  });
+}
+
+function cssResponse(filePath: string): Response {
+  return new Response(Bun.file(filePath), {
+    headers: {
+      "Content-Type": "text/css; charset=utf-8",
+      "Cache-Control": "no-cache",
+    },
+  });
+}
+
+interface ServeContext {
+  basePrefix: string;
+  walletHtml: string;
+  assetDir: string;
+}
 
 async function findAvailablePort(startPort: number): Promise<number> {
   let port = Math.max(0, startPort);
@@ -245,12 +252,109 @@ function ensureSessionClient(context: SessionContext): CashubashClient | null {
 
 async function start() {
   const port = await findAvailablePort(41000);
-  const basePath = `/${port}`;
+  const basePrefix = `/${port}`;
 
-  const baseRoutes: Record<string, RouteEntry> = {
-    "/": walletHtml,
-    "/api/server-pubkey": {
-      GET: (request: Request) => {
+  const assetDir = path.join(srcDir, "..", "tmp", "public");
+  ensureDirectory(assetDir);
+
+  const buildResult = await Bun.build({
+    entrypoints: [path.join(srcDir, "wallet-frontend.ts")],
+    outdir: assetDir,
+    target: "browser",
+  });
+
+  if (!buildResult.success) {
+    logger.error({ errors: buildResult.logs }, "Failed to build frontend bundle");
+    throw new Error("Failed to compile wallet frontend");
+  }
+
+  const walletHtmlPath = path.join(srcDir, "wallet.html");
+  const walletHtml = await Bun.file(walletHtmlPath).text();
+
+  const context: ServeContext = {
+    basePrefix,
+    walletHtml,
+    assetDir,
+  };
+
+  const server = Bun.serve({
+    port,
+    development: false,
+    reusePort: false,
+    error(err) {
+      logger.error({ err }, "server error");
+      return new Response("Internal Server Error", { status: 500 });
+    },
+    fetch(request) {
+      return handleRequest(request, context);
+    },
+  });
+
+  logger.info({ port: server.port }, `8Bit Cashubash wallet ready on port ${server.port}`);
+  console.log(`[WINGMAN21-URL]https://host.otherstuff.ai/${server.port}`);
+
+  await once(process, "SIGTERM");
+  logger.info(undefined, "Received SIGTERM, shutting down.");
+  server.stop();
+  logger.info(undefined, "Server closed.");
+  process.exit(0);
+}
+
+async function handleRequest(request: Request, context: ServeContext): Promise<Response> {
+  const url = new URL(request.url);
+  const { basePrefix, walletHtml, assetDir } = context;
+
+  if (url.pathname === basePrefix) {
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: `${basePrefix}/`,
+      },
+    });
+  }
+
+  const prefixed = url.pathname.startsWith(`${basePrefix}/`);
+  let normalizedPath = prefixed ? url.pathname.slice(basePrefix.length) : url.pathname;
+  if (normalizedPath === "") {
+    normalizedPath = "/";
+  }
+  if (!normalizedPath.startsWith("/")) {
+    normalizedPath = `/${normalizedPath}`;
+  }
+
+  if (normalizedPath === "/" && request.method === "GET") {
+    return htmlResponse(walletHtml);
+  }
+
+  if (normalizedPath === "/wallet-frontend.js" && request.method === "GET") {
+    const filePath = path.join(assetDir, "wallet-frontend.js");
+    return javascriptResponse(filePath);
+  }
+
+  if (normalizedPath === "/ui/plain-skin.css" && request.method === "GET") {
+    const cssPath = path.join(srcDir, "ui", "plain-skin.css");
+    return cssResponse(cssPath);
+  }
+
+  if (normalizedPath === "/favicon.ico") {
+    return new Response(null, { status: 204 });
+  }
+
+  if (normalizedPath.startsWith("/api/")) {
+    const apiResponse = await handleApi(normalizedPath, request);
+    if (apiResponse) {
+      return apiResponse;
+    }
+    return new Response("Not Found", { status: 404 });
+  }
+
+  return new Response("Not Found", { status: 404 });
+}
+
+async function handleApi(pathname: string, request: Request): Promise<Response | null> {
+  switch (pathname) {
+    case "/api/server-pubkey": {
+      if (request.method === "GET") {
         const sessionHandle = ensureSession(request);
         const headers = sessionHeaders(sessionHandle);
         return jsonResponse(
@@ -261,8 +365,8 @@ async function start() {
           200,
           headers
         );
-      },
-      POST: async (request: Request) => {
+      }
+      if (request.method === "POST") {
         const sessionHandle = ensureSession(request);
         const headers = sessionHeaders(sessionHandle);
         let payload: { serverPubkey?: string };
@@ -316,8 +420,8 @@ async function start() {
           sessionHandle.context.serverPubkey = undefined;
           return jsonResponse({ message: "Failed to configure server pubkey" }, 400, headers);
         }
-      },
-      DELETE: async (request: Request) => {
+      }
+      if (request.method === "DELETE") {
         const sessionHandle = ensureSession(request);
         const headers = sessionHeaders(sessionHandle);
         try {
@@ -328,166 +432,145 @@ async function start() {
         sessionHandle.context.client = undefined;
         sessionHandle.context.serverPubkey = undefined;
         return jsonResponse({ cleared: true }, 200, headers);
-      },
-    },
-    "/api/balance": {
-      GET: async (request: Request) => {
-        const sessionHandle = ensureSession(request);
-        const headers = sessionHeaders(sessionHandle);
-        const client = ensureSessionClient(sessionHandle.context);
-        if (!client) {
-          return serviceUnavailable("Server pubkey not configured", headers);
-        }
-        try {
-          const { result } = await client.GetBalance({});
-          return jsonResponse({ balance: result.balance }, 200, headers);
-        } catch (error) {
-          logger.error({ error }, "failed to fetch balance");
-          return jsonResponse({ message: "Failed to fetch balance" }, 502, headers);
-        }
-      },
-    },
-    "/api/make-invoice": {
-      POST: async (request: Request) => {
-        const sessionHandle = ensureSession(request);
-        const headers = sessionHeaders(sessionHandle);
-        let payload: MakeInvoiceBody;
-        try {
-          payload = (await request.json()) as MakeInvoiceBody;
-        } catch {
-          return badRequest("Invalid JSON body", headers);
-        }
-        if (typeof payload.amount !== "number" || !Number.isFinite(payload.amount) || payload.amount <= 0) {
-          return badRequest("Amount must be a positive number", headers);
-        }
-        const client = ensureSessionClient(sessionHandle.context);
-        if (!client) {
-          return serviceUnavailable("Server pubkey not configured", headers);
-        }
-        try {
-          const { result } = await client.MakeInvoice(
-            payload.amount,
-            payload.description,
-            undefined,
-            payload.expiry
-          );
-          return jsonResponse(
-            {
-              invoice: result.invoice,
-              amount: result.amount,
-              expiresAt: result.expires_at,
-            },
-            200,
-            headers
-          );
-        } catch (error) {
-          logger.error({ error }, "failed to make invoice");
-          return jsonResponse({ message: "Failed to make invoice" }, 502, headers);
-        }
-      },
-    },
-    "/api/pay-invoice": {
-      POST: async (request: Request) => {
-        const sessionHandle = ensureSession(request);
-        const headers = sessionHeaders(sessionHandle);
-        let payload: PayInvoiceBody;
-        try {
-          payload = (await request.json()) as PayInvoiceBody;
-        } catch {
-          return badRequest("Invalid JSON body", headers);
-        }
-        if (!payload.invoice) {
-          return badRequest("Invoice is required", headers);
-        }
-        const amount = payload.amount;
-        if (typeof amount === "number" && (!Number.isFinite(amount) || amount <= 0)) {
-          return badRequest("Amount override must be positive", headers);
-        }
-        const client = ensureSessionClient(sessionHandle.context);
-        if (!client) {
-          return serviceUnavailable("Server pubkey not configured", headers);
-        }
-        try {
-          const { result } = await client.PayInvoice(payload.invoice, amount);
-          return jsonResponse(
-            {
-              preimage: result.preimage,
-              feesPaid: result.fees_paid,
-            },
-            200,
-            headers
-          );
-        } catch (error) {
-          logger.error({ error }, "failed to pay invoice");
-          return jsonResponse({ message: "Failed to pay invoice" }, 502, headers);
-        }
-      },
-    },
-    "/api/send-ecash": {
-      POST: async (request: Request) => {
-        const sessionHandle = ensureSession(request);
-        const headers = sessionHeaders(sessionHandle);
-        let payload: SendEcashBody;
-        try {
-          payload = (await request.json()) as SendEcashBody;
-        } catch {
-          return badRequest("Invalid JSON body", headers);
-        }
-        if (typeof payload.amount !== "number" || !Number.isFinite(payload.amount) || payload.amount <= 0) {
-          return badRequest("Amount must be a positive number", headers);
-        }
-        const client = ensureSessionClient(sessionHandle.context);
-        if (!client) {
-          return serviceUnavailable("Server pubkey not configured", headers);
-        }
-        try {
-          const result = await client.SendEcash(payload.amount);
-          return jsonResponse(
-            {
-              cashuToken: result.cashuToken,
-              sentAmount: result.sentAmount,
-              keepAmount: result.keepAmount,
-              proofCount: result.proofCount,
-              timestamp: result.timestamp,
-            },
-            200,
-            headers
-          );
-        } catch (error) {
-          logger.error({ error }, "failed to send ecash");
-          return jsonResponse({ message: "Failed to mint ecash" }, 502, headers);
-        }
-      },
-    },
-  };
-
-  const routesWithBasePath = {
-    ...baseRoutes,
-    ...createPrefixedRoutes(baseRoutes, basePath),
-  };
-
-  const server = Bun.serve({
-    port,
-    routes: routesWithBasePath,
-    error(err) {
-      logger.error({ err }, "server error");
-      return new Response("Internal Server Error", { status: 500 });
-    },
-    development: {
-      hmr: true,
-      console: true,
-    },
-    reusePort: false,
-  });
-
-  logger.info({ port: server.port }, `8Bit Cashubash wallet ready on port ${server.port}`);
-  console.log(`[WINGMAN21-URL]https://host.otherstuff.ai/${server.port}`);
-
-  await once(process, "SIGTERM");
-  logger.info(undefined, "Received SIGTERM, shutting down.");
-  server.stop();
-  logger.info(undefined, "Server closed.");
-  process.exit(0);
+      }
+      return jsonResponse({ message: "Method not allowed" }, 405, { Allow: "GET, POST, DELETE" });
+    }
+    case "/api/balance": {
+      if (request.method !== "GET") {
+        return jsonResponse({ message: "Method not allowed" }, 405, { Allow: "GET" });
+      }
+      const sessionHandle = ensureSession(request);
+      const headers = sessionHeaders(sessionHandle);
+      const client = ensureSessionClient(sessionHandle.context);
+      if (!client) {
+        return serviceUnavailable("Server pubkey not configured", headers);
+      }
+      try {
+        const { result } = await client.GetBalance({});
+        return jsonResponse({ balance: result.balance }, 200, headers);
+      } catch (error) {
+        logger.error({ error }, "failed to fetch balance");
+        return jsonResponse({ message: "Failed to fetch balance" }, 502, headers);
+      }
+    }
+    case "/api/make-invoice": {
+      if (request.method !== "POST") {
+        return jsonResponse({ message: "Method not allowed" }, 405, { Allow: "POST" });
+      }
+      const sessionHandle = ensureSession(request);
+      const headers = sessionHeaders(sessionHandle);
+      let payload: MakeInvoiceBody;
+      try {
+        payload = (await request.json()) as MakeInvoiceBody;
+      } catch {
+        return badRequest("Invalid JSON body", headers);
+      }
+      if (typeof payload.amount !== "number" || !Number.isFinite(payload.amount) || payload.amount <= 0) {
+        return badRequest("Amount must be a positive number", headers);
+      }
+      const client = ensureSessionClient(sessionHandle.context);
+      if (!client) {
+        return serviceUnavailable("Server pubkey not configured", headers);
+      }
+      try {
+        const { result } = await client.MakeInvoice(
+          payload.amount,
+          payload.description,
+          undefined,
+          payload.expiry
+        );
+        return jsonResponse(
+          {
+            invoice: result.invoice,
+            amount: result.amount,
+            expiresAt: result.expires_at,
+          },
+          200,
+          headers
+        );
+      } catch (error) {
+        logger.error({ error }, "failed to make invoice");
+        return jsonResponse({ message: "Failed to make invoice" }, 502, headers);
+      }
+    }
+    case "/api/pay-invoice": {
+      if (request.method !== "POST") {
+        return jsonResponse({ message: "Method not allowed" }, 405, { Allow: "POST" });
+      }
+      const sessionHandle = ensureSession(request);
+      const headers = sessionHeaders(sessionHandle);
+      let payload: PayInvoiceBody;
+      try {
+        payload = (await request.json()) as PayInvoiceBody;
+      } catch {
+        return badRequest("Invalid JSON body", headers);
+      }
+      if (!payload.invoice) {
+        return badRequest("Invoice is required", headers);
+      }
+      const amount = payload.amount;
+      if (typeof amount === "number" && (!Number.isFinite(amount) || amount <= 0)) {
+        return badRequest("Amount override must be positive", headers);
+      }
+      const client = ensureSessionClient(sessionHandle.context);
+      if (!client) {
+        return serviceUnavailable("Server pubkey not configured", headers);
+      }
+      try {
+        const { result } = await client.PayInvoice(payload.invoice, amount);
+        return jsonResponse(
+          {
+            preimage: result.preimage,
+            feesPaid: result.fees_paid,
+          },
+          200,
+          headers
+        );
+      } catch (error) {
+        logger.error({ error }, "failed to pay invoice");
+        return jsonResponse({ message: "Failed to pay invoice" }, 502, headers);
+      }
+    }
+    case "/api/send-ecash": {
+      if (request.method !== "POST") {
+        return jsonResponse({ message: "Method not allowed" }, 405, { Allow: "POST" });
+      }
+      const sessionHandle = ensureSession(request);
+      const headers = sessionHeaders(sessionHandle);
+      let payload: SendEcashBody;
+      try {
+        payload = (await request.json()) as SendEcashBody;
+      } catch {
+        return badRequest("Invalid JSON body", headers);
+      }
+      if (typeof payload.amount !== "number" || !Number.isFinite(payload.amount) || payload.amount <= 0) {
+        return badRequest("Amount must be a positive number", headers);
+      }
+      const client = ensureSessionClient(sessionHandle.context);
+      if (!client) {
+        return serviceUnavailable("Server pubkey not configured", headers);
+      }
+      try {
+        const result = await client.SendEcash(payload.amount);
+        return jsonResponse(
+          {
+            cashuToken: result.cashuToken,
+            sentAmount: result.sentAmount,
+            keepAmount: result.keepAmount,
+            proofCount: result.proofCount,
+            timestamp: result.timestamp,
+          },
+          200,
+          headers
+        );
+      } catch (error) {
+        logger.error({ error }, "failed to send ecash");
+        return jsonResponse({ message: "Failed to mint ecash" }, 502, headers);
+      }
+    }
+    default:
+      return null;
+  }
 }
 
 start().catch((error) => {
