@@ -16,7 +16,10 @@ When summarising your activity, please state what can be tested currently and if
 
 ## Custom Wallet Architecture
 
-- Treat the wallet app as front end only; never add backend logic here.
+- Treat the wallet app as front end only for business logic; keep new network
+  calls, state management, and rendering in the client. The Bun server in
+  `src/index.ts` should only be touched to expose additional static assets or
+  adjust existing routes (for example, when a new stylesheet is added).
 - Always integrate with the existing client in `src/ctxcn/CashubashClient.ts` to reach wallet services through contextv/mcp.
 - When a user wants a new wallet, create a fresh front end skin that reuses that same client layer rather than building duplicate service code.
 - Lightning invoices must always be rendered from client data that flows through `CashubashClient`; do not reimplement invoice services locally.
