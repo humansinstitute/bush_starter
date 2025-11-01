@@ -3,8 +3,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "setup": "bun install && bun run scripts/manage.ts start",
-    "start": "bun run scripts/manage.ts start",
+    "setup": "bun install && bun --hot src/index.ts",
+    "start": "bun --hot src/index.ts",
     "stop": "bun run scripts/manage.ts stop",
     "restart": "bun run scripts/manage.ts restart",
     "dev": "bun run src/index.ts"
