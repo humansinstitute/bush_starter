@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, statSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { createCashubashClient, getDefaultServerPubkey } from "./ctxcn/CashubashClient.ts";
@@ -81,22 +81,71 @@ function htmlResponse(body: string): Response {
   });
 }
 
-function javascriptResponse(filePath: string): Response {
+function fileResponse(filePath: string): Response {
+  const ext = path.extname(filePath).toLowerCase();
+  let contentType = "application/octet-stream";
+  switch (ext) {
+    case ".js":
+      contentType = "application/javascript; charset=utf-8";
+      break;
+    case ".css":
+      contentType = "text/css; charset=utf-8";
+      break;
+    case ".json":
+    case ".map":
+      contentType = "application/json; charset=utf-8";
+      break;
+    case ".svg":
+      contentType = "image/svg+xml";
+      break;
+    case ".png":
+      contentType = "image/png";
+      break;
+    case ".jpg":
+    case ".jpeg":
+      contentType = "image/jpeg";
+      break;
+    case ".gif":
+      contentType = "image/gif";
+      break;
+    case ".webp":
+      contentType = "image/webp";
+      break;
+    default:
+      break;
+  }
+
+  const cacheControl = ext === ".js" || ext === ".css" ? "no-cache" : "no-store";
+
   return new Response(Bun.file(filePath), {
     headers: {
-      "Content-Type": "application/javascript; charset=utf-8",
-      "Cache-Control": "no-cache",
+      "Content-Type": contentType,
+      "Cache-Control": cacheControl,
     },
   });
 }
 
-function cssResponse(filePath: string): Response {
-  return new Response(Bun.file(filePath), {
-    headers: {
-      "Content-Type": "text/css; charset=utf-8",
-      "Cache-Control": "no-cache",
-    },
-  });
+function resolveAsset(assetDir: string, requestPath: string): string | null {
+  const relative = requestPath.replace(/^\/+/, "");
+  if (!relative || relative.endsWith("/")) {
+    return null;
+  }
+  const base = path.resolve(assetDir);
+  const candidate = path.resolve(assetDir, relative);
+  if (!candidate.startsWith(base)) {
+    return null;
+  }
+  if (!existsSync(candidate)) {
+    return null;
+  }
+  try {
+    if (!statSync(candidate).isFile()) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  return candidate;
 }
 
 interface ServeContext {
@@ -261,6 +310,8 @@ async function start() {
     entrypoints: [path.join(srcDir, "wallet-frontend.ts")],
     outdir: assetDir,
     target: "browser",
+    splitting: false,
+    format: "esm",
   });
 
   if (!buildResult.success) {
@@ -326,14 +377,16 @@ async function handleRequest(request: Request, context: ServeContext): Promise<R
     return htmlResponse(walletHtml);
   }
 
-  if (normalizedPath === "/wallet-frontend.js" && request.method === "GET") {
-    const filePath = path.join(assetDir, "wallet-frontend.js");
-    return javascriptResponse(filePath);
-  }
-
   if (normalizedPath === "/ui/plain-skin.css" && request.method === "GET") {
     const cssPath = path.join(srcDir, "ui", "plain-skin.css");
-    return cssResponse(cssPath);
+    return fileResponse(cssPath);
+  }
+
+  if (request.method === "GET") {
+    const assetPath = resolveAsset(assetDir, normalizedPath);
+    if (assetPath) {
+      return fileResponse(assetPath);
+    }
   }
 
   if (normalizedPath === "/favicon.ico") {
