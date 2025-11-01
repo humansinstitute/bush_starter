@@ -3,6 +3,7 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "setup": "bun install && bun run scripts/manage.ts start",
     "start": "bun run scripts/manage.ts start",
     "stop": "bun run scripts/manage.ts stop",
     "restart": "bun run scripts/manage.ts restart",
