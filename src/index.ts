@@ -421,6 +421,7 @@ async function start() {
   });
 
   logger.info({ port: server.port }, `8Bit Cashubash wallet ready on port ${server.port}`);
+  console.log(`[WINGMAN21-URL]https://host.otherstuff.ai/${server.port}`);
 
   await once(process, "SIGTERM");
   logger.info(undefined, "Received SIGTERM, shutting down.");
